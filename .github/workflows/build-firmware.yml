@@ -1,0 +1,54 @@
+name: Build ESP32-S3 Firmware & merged.bin
+
+on:
+  push:
+    branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Compile ESP32-S3 N16R8 & Generate merged.bin
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install PlatformIO & Esptool
+        run: |
+          python -m pip install --upgrade pip
+          pip install platformio esptool
+
+      - name: Compile Firmware via PlatformIO
+        run: |
+          pio run -e esp32-s3-devkitc-1
+
+      - name: Generate Single merged.bin using esptool
+        run: |
+          echo "Merging bootloader (0x0), partitions (0x8000), otadata (0xe000), and app (0x10000)..."
+          esptool.py --chip esp32s3 merge_bin -o .pio/build/esp32-s3-devkitc-1/merged.bin \
+            --flash_mode dio \
+            --flash_size 16MB \
+            0x0000   .pio/build/esp32-s3-devkitc-1/bootloader.bin \
+            0x8000   .pio/build/esp32-s3-devkitc-1/partitions.bin \
+            0xe000   ~/.platformio/packages/framework-arduinoespressif32/tools/partitions/boot_app0.bin \
+            0x10000  .pio/build/esp32-s3-devkitc-1/firmware.bin
+
+      - name: Upload Compilation Artifacts (Binaries & merged.bin)
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp32-s3-firmware-binaries
+          path: |
+            .pio/build/esp32-s3-devkitc-1/merged.bin
+            .pio/build/esp32-s3-devkitc-1/firmware.bin
+            .pio/build/esp32-s3-devkitc-1/bootloader.bin
+            .pio/build/esp32-s3-devkitc-1/partitions.bin
+          retention-days: 30
