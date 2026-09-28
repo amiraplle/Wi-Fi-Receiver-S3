@@ -1,10 +1,12 @@
 import React, { useState } from 'react';
-import { Copy, Check, Download, FileCode, HardDrive, Terminal, Sparkles } from 'lucide-react';
+import { Copy, Check, Download, FileCode, HardDrive, Terminal, Sparkles, FolderArchive } from 'lucide-react';
+import JSZip from 'jszip';
 import { FIRMWARE_FILES, FirmwareFile } from '../data/firmwareCode.ts';
 
 export const FirmwareCodeViewer: React.FC = () => {
   const [selectedFileIdx, setSelectedFileIdx] = useState(0);
   const [copied, setCopied] = useState(false);
+  const [isZipping, setIsZipping] = useState(false);
 
   const activeFile = FIRMWARE_FILES[selectedFileIdx];
 
@@ -26,6 +28,29 @@ export const FirmwareCodeViewer: React.FC = () => {
     URL.revokeObjectURL(url);
   };
 
+  const handleDownloadFullZip = async () => {
+    setIsZipping(true);
+    try {
+      const zip = new JSZip();
+      FIRMWARE_FILES.forEach((f) => {
+        zip.file(f.filename, f.content);
+      });
+      const content = await zip.generateAsync({ type: 'blob' });
+      const url = URL.createObjectURL(content);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'esp32s3-wifiaudio-receiver-repo.zip';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('Failed to create zip:', err);
+    } finally {
+      setIsZipping(false);
+    }
+  };
+
   return (
     <div className="space-y-8">
       {/* Header */}
@@ -40,6 +65,14 @@ export const FirmwareCodeViewer: React.FC = () => {
         </div>
 
         <div className="flex items-center gap-3">
+          <button
+            onClick={handleDownloadFullZip}
+            disabled={isZipping}
+            className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded transition-colors whitespace-nowrap shadow-md"
+          >
+            <FolderArchive className="w-4 h-4" />
+            <span>{isZipping ? 'Packing Zip...' : 'Download Full Repo (.zip)'}</span>
+          </button>
           <button
             onClick={handleCopy}
             className="flex items-center gap-2 px-4 py-2 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded transition-colors whitespace-nowrap"
