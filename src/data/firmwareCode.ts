@@ -443,12 +443,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-          cache: 'pip'
 
       - name: Install PlatformIO & Esptool
         run: |
           python -m pip install --upgrade pip
-          pip install platformio esptool
+          pip install -r requirements.txt
 
       - name: Compile Firmware via PlatformIO
         run: |
@@ -617,6 +616,14 @@ app0,     app,  ota_0,   0x10000, 0x400000,
 app1,     app,  ota_1,   0x410000,0x400000,
 spiffs,   data, spiffs,  0x810000,0x7E0000,
 coredump, data, coredump,0xFF0000,0x10000,
+`
+  },
+  {
+    filename: "requirements.txt",
+    language: "text",
+    description: "Python dependencies for GitHub Actions CI and PlatformIO firmware build",
+    content: `platformio>=6.1.15
+esptool>=4.7.0
 `
   },
   {
