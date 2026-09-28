@@ -1,0 +1,6 @@
+{
+  "name": "ESP32-S3 WiFi Audio Receiver & Controller",
+  "description": "Embedded WiFi audio streaming receiver controller and firmware suite for ESP32-S3 N16R8 and UDA1334A I2S DAC, compatible with WiFiAudioStreaming Android app.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
