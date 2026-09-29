@@ -17,8 +17,7 @@
 #include <AsyncTCP.h>
 #include <Update.h>
 #include <Preferences.h>
-#include <driver/i2s_std.h>
-#include <esp_dsp.h>
+#include <driver/i2s.h>
 
 // ----------------------------------------------------------------------------
 // PIN CONFIGURATION FOR UDA1334A & ESP32-S3
@@ -134,7 +133,7 @@ WiFiUDP udpAudio;
 AsyncWebServer webServer(80);
 AsyncWebSocket ws("/ws");
 Preferences prefs;
-i2s_chan_handle_t tx_chan = nullptr;
+#define I2S_PORT          I2S_NUM_0
 
 struct {
   bool powerOn = true;
@@ -150,33 +149,41 @@ struct {
 } receiverState;
 
 // ----------------------------------------------------------------------------
-// I2S INITIALIZATION (ESP-IDF 5.x / Arduino ESP32 3.x API)
+// I2S INITIALIZATION (Universal Arduino ESP32 driver/i2s.h)
 // ----------------------------------------------------------------------------
 void setupI2S() {
-  i2s_chan_config_t chan_cfg = I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_0, I2S_ROLE_MASTER);
-  chan_cfg.dma_desc_num = 8;
-  chan_cfg.dma_frame_num = 512;
-  ESP_ERROR_CHECK(i2s_new_channel(&chan_cfg, &tx_chan, NULL));
-
-  i2s_std_config_t std_cfg = {
-    .clk_cfg = I2S_STD_CLK_DEFAULT_CONFIG(SAMPLE_RATE),
-    .slot_cfg = I2S_STD_PHILIPS_SLOT_DEFAULT_CONFIG(I2S_DATA_BIT_WIDTH_16BIT, I2S_SLOT_MODE_STEREO),
-    .gpio_cfg = {
-      .mclk = I2S_GPIO_UNUSED,   // Not needed by UDA1334A
-      .bclk = (gpio_num_t)I2S_BCLK_PIN,
-      .ws   = (gpio_num_t)I2S_WSEL_PIN,
-      .dout = (gpio_num_t)I2S_DIN_PIN,
-      .din  = I2S_GPIO_UNUSED,
-      .invert_flags = {
-        .mclk_inv = false,
-        .bclk_inv = false,
-        .ws_inv   = false,
-      },
-    },
+  i2s_config_t i2s_config = {
+    .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
+    .sample_rate = SAMPLE_RATE,
+    .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
+    .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
+    .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
+    .intr_alloc_flags = ESP_INTR_FLAG_LEVEL1,
+    .dma_buf_count = 8,
+    .dma_buf_len = 512,
+    .use_apll = false,
+    .tx_desc_auto_clear = true,
+    .fixed_mclk = 0
   };
 
-  ESP_ERROR_CHECK(i2s_channel_init_std_mode(tx_chan, &std_cfg));
-  ESP_ERROR_CHECK(i2s_channel_enable(tx_chan));
+  i2s_pin_config_t pin_config = {
+    .bck_io_num = I2S_BCLK_PIN,
+    .ws_io_num = I2S_WSEL_PIN,
+    .data_out_num = I2S_DIN_PIN,
+    .data_in_num = I2S_PIN_NO_CHANGE
+  };
+
+  esp_err_t err = i2s_driver_install(I2S_PORT, &i2s_config, 0, NULL);
+  if (err != ESP_OK) {
+    Serial.printf("[ERROR] Failed to install I2S driver: %d\n", err);
+  }
+
+  err = i2s_set_pin(I2S_PORT, &pin_config);
+  if (err != ESP_OK) {
+    Serial.printf("[ERROR] Failed to set I2S pins: %d\n", err);
+  }
+
+  i2s_set_clk(I2S_PORT, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
 
   pinMode(UDA_MUTE_PIN, OUTPUT);
   digitalWrite(UDA_MUTE_PIN, LOW); // Unmute UDA1334A
@@ -195,7 +202,7 @@ void audioPlaybackTask(void* param) {
     if (!receiverState.powerOn || !receiverState.isPlaying || receiverState.isMuted) {
       // Clear DMA with zeros to prevent hum/clicks
       memset(dmaBuffer, 0, CHUNK_SIZE);
-      i2s_channel_write(tx_chan, dmaBuffer, CHUNK_SIZE, &bytesWritten, portMAX_DELAY);
+      i2s_write(I2S_PORT, dmaBuffer, CHUNK_SIZE, &bytesWritten, portMAX_DELAY);
       vTaskDelay(pdMS_TO_TICKS(10));
       continue;
     }
@@ -216,11 +223,11 @@ void audioPlaybackTask(void* param) {
       }
 
       // Output to UDA1334A DAC via DMA
-      i2s_channel_write(tx_chan, dmaBuffer, bytesRead, &bytesWritten, portMAX_DELAY);
+      i2s_write(I2S_PORT, dmaBuffer, bytesRead, &bytesWritten, portMAX_DELAY);
     } else {
       // Buffer underrun: output silence to avoid buzzing
       memset(dmaBuffer, 0, CHUNK_SIZE);
-      i2s_channel_write(tx_chan, dmaBuffer, CHUNK_SIZE, &bytesWritten, 10);
+      i2s_write(I2S_PORT, dmaBuffer, CHUNK_SIZE, &bytesWritten, 10);
       vTaskDelay(pdMS_TO_TICKS(5));
     }
   }
