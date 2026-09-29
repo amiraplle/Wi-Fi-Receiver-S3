@@ -49,6 +49,7 @@ export const GitHubPushSection: React.FC<{ onGoToFirmware: () => void }> = ({ on
 
       // 2. Create or verify repo
       let targetRepo = repoName.trim();
+      let defaultBranch = 'main';
       const createRepoRes = await fetch('https://api.github.com/user/repos', {
         method: 'POST',
         headers: {
@@ -66,7 +67,23 @@ export const GitHubPushSection: React.FC<{ onGoToFirmware: () => void }> = ({ on
 
       if (createRepoRes.status === 422) {
         // Repo might already exist, which is fine
-        setStatusMessage(`Repository '${targetRepo}' exists. Preparing commits...`);
+        setStatusMessage(`Repository '${targetRepo}' exists. Detecting branch...`);
+        try {
+          const repoInfoRes = await fetch(`https://api.github.com/repos/${username}/${targetRepo}`, {
+            headers: {
+              Authorization: `token ${token.trim()}`,
+              Accept: 'application/vnd.github.v3+json',
+            },
+          });
+          if (repoInfoRes.ok) {
+            const repoData = await repoInfoRes.json();
+            if (repoData.default_branch) {
+              defaultBranch = repoData.default_branch;
+            }
+          }
+        } catch {
+          defaultBranch = 'main';
+        }
       } else if (!createRepoRes.ok) {
         const err = await createRepoRes.json();
         throw new Error(err.message || 'Failed to create repository');
@@ -78,12 +95,12 @@ export const GitHubPushSection: React.FC<{ onGoToFirmware: () => void }> = ({ on
       // 3. Upload each file directly via GitHub Contents API
       for (let i = 0; i < FIRMWARE_FILES.length; i++) {
         const file = FIRMWARE_FILES[i];
-        setStatusMessage(`Committing ${file.filename} (${i + 1}/${FIRMWARE_FILES.length})...`);
+        setStatusMessage(`Committing ${file.filename} to branch '${defaultBranch}' (${i + 1}/${FIRMWARE_FILES.length})...`);
 
         // Check if file exists to get SHA for update
         let sha: string | undefined;
         try {
-          const getFileRes = await fetch(`https://api.github.com/repos/${username}/${targetRepo}/contents/${file.filename}`, {
+          const getFileRes = await fetch(`https://api.github.com/repos/${username}/${targetRepo}/contents/${file.filename}?ref=${defaultBranch}`, {
             headers: {
               Authorization: `token ${token.trim()}`,
               Accept: 'application/vnd.github.v3+json',
@@ -110,6 +127,7 @@ export const GitHubPushSection: React.FC<{ onGoToFirmware: () => void }> = ({ on
           body: JSON.stringify({
             message: `ci: add ${file.filename} for automatic merged.bin build`,
             content: base64Content,
+            branch: defaultBranch,
             sha: sha,
           }),
         });
