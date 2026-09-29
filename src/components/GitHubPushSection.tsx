@@ -153,6 +153,19 @@ export const GitHubPushSection: React.FC<{ onGoToFirmware: () => void }> = ({ on
 
   return (
     <div className="space-y-8">
+      {/* Native AI Studio Share Menu Callout */}
+      <div className="border border-emerald-500/30 bg-emerald-950/20 rounded-xl p-5 lg:p-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2 text-emerald-400 font-mono text-xs font-bold uppercase tracking-wider">
+            <CheckCircle2 className="w-4 h-4 text-emerald-400" />
+            <span>Recommended: Use AI Studio's Native "Share &rarr; Export to GitHub"</span>
+          </div>
+          <p className="text-xs text-slate-300 leading-relaxed max-w-2xl">
+            You can push directly from AI Studio without entering tokens. All required firmware files (<code className="text-cyan-300">src/main.cpp</code>, <code className="text-cyan-300">platformio.ini</code>, <code className="text-cyan-300">partitions_16MB.csv</code>, <code className="text-cyan-300">scripts/merge_bin.py</code>, and <code className="text-cyan-300">.github/workflows/build-firmware.yml</code>) are already in this workspace. Simply click <strong>Share &rarr; Export to GitHub</strong> in the top header!
+          </p>
+        </div>
+      </div>
+
       {/* Direct Push Card */}
       <div className="border border-slate-800 bg-slate-900/60 rounded-xl p-6 lg:p-8 space-y-6">
         <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-800 pb-5">
