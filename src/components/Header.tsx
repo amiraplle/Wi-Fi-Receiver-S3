@@ -24,8 +24,8 @@ export const Header: React.FC<HeaderProps> = ({
   const [tempIp, setTempIp] = React.useState(espIp);
 
   const navLinks = [
+    { id: 'controller', label: 'Mobile App Preview' },
     { id: 'explainer', label: 'Architecture & Guide' },
-    { id: 'controller', label: 'Web Controller' },
     { id: 'github', label: 'GitHub & merged.bin' },
     { id: 'wiring', label: 'Hardware Wiring' },
     { id: 'wifi', label: 'WiFi Setup' },

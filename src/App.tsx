@@ -86,8 +86,8 @@ export default function App() {
         {/* Sub-navigation tabs on mobile */}
         <div className="flex lg:hidden overflow-x-auto pb-4 mb-6 gap-2 border-b border-slate-800">
           {[
+            { id: 'controller', label: 'Mobile App Preview' },
             { id: 'explainer', label: 'Architecture' },
-            { id: 'controller', label: 'Web Controller' },
             { id: 'github', label: 'GitHub & merged.bin' },
             { id: 'wiring', label: 'Wiring & Pinout' },
             { id: 'wifi', label: 'Wi-Fi Setup' },
