@@ -807,18 +807,27 @@ void sendUdpRegistrationPing(const String& ipStr, int port) {
     return;
   }
 
-  // WFAS discovery / registration handshake beacon packet:
-  const uint8_t wfasPing[8] = {'W', 'F', 'A', 'S', 0x02, 0x01, 0x00, 0x00};
+  // WFAS v2 Handshake: Marco Morosi's NetworkManager.kt line 1877 requires:
+  // if (!message.startsWith(CLIENT_HELLO_MESSAGE)) continue;
+  // Where CLIENT_HELLO_MESSAGE is "HELLO_FROM_CLIENT" and version is 2
+  const char* helloMsg = "HELLO_FROM_CLIENT;v=2";
 
   udpAudio9090.beginPacket(targetIp, port);
-  udpAudio9090.write(wfasPing, sizeof(wfasPing));
+  udpAudio9090.write((const uint8_t*)helloMsg, strlen(helloMsg));
   udpAudio9090.endPacket();
 
   udpAudio9091.beginPacket(targetIp, port);
-  udpAudio9091.write(wfasPing, sizeof(wfasPing));
+  udpAudio9091.write((const uint8_t*)helloMsg, strlen(helloMsg));
   udpAudio9091.endPacket();
 
-  Serial.printf("[UDP] Sent WFAS registration beacon to %s:%d\n", ipStr.c_str(), port);
+  // If port wasn't 9091, also send to default discovery port 9091
+  if (port != 9091) {
+    udpAudio9091.beginPacket(targetIp, 9091);
+    udpAudio9091.write((const uint8_t*)helloMsg, strlen(helloMsg));
+    udpAudio9091.endPacket();
+  }
+
+  Serial.printf("[UDP] Sent WFAS handshake 'HELLO_FROM_CLIENT;v=2' to %s:%d\n", ipStr.c_str(), port);
 }
 
 void handleConnectPhone() {
@@ -1012,6 +1021,17 @@ void udpReceiverTask(void* parameter) {
         state.bytesReceived += len;
         state.packetsReceived++;
 
+        // Filter text control packets
+        if (len < 64 && (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0 ||
+                         strncmp((char*)packetBuffer, "PING", 4) == 0)) {
+          if (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0) {
+            state.phoneConnected = true;
+            state.connectionStatus = "Streaming from Phone Active!";
+            Serial.println("[UDP] Handshake HELLO_ACK received from phone! Streaming active.");
+          }
+          continue;
+        }
+
         // WFAS packet handling: 10-byte header stripping
         int pcmOffset = 0;
         if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F' && packetBuffer[2] == 'A' && packetBuffer[3] == 'S') {
@@ -1028,14 +1048,36 @@ void udpReceiverTask(void* parameter) {
       }
     }
 
-    // 2. Check Port 9091 (Secondary UDP socket)
+    // 2. Check Port 9091 (Secondary / Discovery UDP socket)
     int packetSize91 = udpAudio9091.parsePacket();
     if (packetSize91 > 0) {
       hadPacket = true;
+      IPAddress remoteIp = udpAudio9091.remoteIP();
+      int remotePort = udpAudio9091.remotePort();
       int len = udpAudio9091.read(packetBuffer, sizeof(packetBuffer));
       if (len > 0) {
         state.bytesReceived += len;
         state.packetsReceived++;
+
+        // Check for Auto-Discovery beacon from Android phone
+        if (len < 64 && strncmp((char*)packetBuffer, "WIFI_AUDIO_STREAMER_DISCOVERY", 29) == 0) {
+          Serial.printf("[UDP] Discovered phone server at %s:%d! Auto-linking...\n", remoteIp.toString().c_str(), remotePort);
+          state.phoneServerIp = remoteIp.toString();
+          state.streamPort = 9090;
+          sendUdpRegistrationPing(remoteIp.toString(), 9090);
+          continue;
+        }
+
+        // Filter text control packets
+        if (len < 64 && (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0 ||
+                         strncmp((char*)packetBuffer, "PING", 4) == 0)) {
+          if (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0) {
+            state.phoneConnected = true;
+            state.connectionStatus = "Streaming from Phone Active!";
+            Serial.println("[UDP] Handshake HELLO_ACK received from phone! Streaming active.");
+          }
+          continue;
+        }
 
         int pcmOffset = 0;
         if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F' && packetBuffer[2] == 'A' && packetBuffer[3] == 'S') {
