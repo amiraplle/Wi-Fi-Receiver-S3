@@ -11,7 +11,7 @@ import { AndroidSetupGuide } from './components/AndroidSetupGuide.tsx';
 import { GitHubPushSection } from './components/GitHubPushSection.tsx';
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<string>('explainer');
+  const [activeTab, setActiveTab] = useState<string>('controller');
   const [isSimulated, setIsSimulated] = useState<boolean>(true);
   const [espIp, setEspIp] = useState<string>('192.168.1.120');
 

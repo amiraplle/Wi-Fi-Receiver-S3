@@ -5,20 +5,29 @@
  * (https://github.com/marcomorosi06/WiFiAudioStreaming-Android)
  * ============================================================================
  * Hardware: ESP32-S3-DevKitC-1-N16R8 (16MB Flash, 8MB Octal PSRAM)
- * I2S DAC:   UDA1334A Stereo DAC (Adafruit / CJMCU breakout)
- * Features:
- *   - Auto Captive Portal + DNS Redirect (192.168.4.1) for instant AP setup
- *   - Robust Arduino WebServer for rock-solid stability in AP & STA mode
- *   - Dual-core FreeRTOS: Core 0 UDP audio receiver, Core 1 I2S DMA playback
- *   - 512KB Octal PSRAM Ring Buffer for jitter-free 16-bit 44.1kHz Stereo PCM
- *   - Automatic mDNS: http://wifimusic.local
- *   - UDP Audio Listener on port 9091 (and configurable)
- *   - Built-in HTML Web Controller with live meters, volume, & OTA update
+ * I2S DAC:   UDA1334A Stereo DAC (BCLK=GPIO4, WSEL=GPIO5, DIN=GPIO6, MUTE=GPIO7)
+ * ============================================================================
+ * HOW MARCO MOROSI'S APP WORKS:
+ * 1. If phone is in TRANSMITTER / SERVER Mode:
+ *    The phone runs an audio server and displays:
+ *    "Waiting for client on port 9090 (or 9091)"
+ *    -> The ESP32 acts as a CLIENT and connects directly to the phone's IP:PORT!
+ * 2. If phone is in TRANSMITTER PUSH / UDP Mode:
+ *    The phone pushes audio packets directly to the ESP32's IP:PORT (port 9090/9091).
+ *    -> The ESP32 listens as a SERVER on both TCP and UDP port 9090 & 9091!
+ * 
+ * THIS FIRMWARE SUPPORTS BOTH MODES SIMULTANEOUSLY!
+ * - TCP & UDP Server on port 9090 & 9091 (Receives push audio from phone)
+ * - Auto Client Connector: Connects to phone's server IP & port 9090
+ * - Web Controller & Captive Portal on port 80 (http://192.168.4.1 or http://wifimusic.local)
+ * - 512KB Octal PSRAM Ring Buffer for jitter-free 16-bit 44.1kHz Stereo PCM
  * ============================================================================
  */
 
 #include <Arduino.h>
 #include <WiFi.h>
+#include <WiFiClient.h>
+#include <WiFiServer.h>
 #include <WiFiUdp.h>
 #include <DNSServer.h>
 #include <WebServer.h>
@@ -39,12 +48,13 @@
 // ----------------------------------------------------------------------------
 // AUDIO & BUFFER PARAMETERS
 // ----------------------------------------------------------------------------
-#define DEFAULT_UDP_PORT  9091         // WiFiAudioStreaming default UDP port
+#define STREAM_PORT_9090  9090         // WiFiAudioStreaming primary port (TCP/UDP)
+#define STREAM_PORT_9091  9091         // WiFiAudioStreaming secondary port (UDP)
 #define SAMPLE_RATE       44100        // 44.1 kHz 16-bit Stereo PCM
 #define BITS_PER_SAMPLE   16
 #define I2S_PORT          I2S_NUM_0
 #define RING_BUFFER_SIZE  (512 * 1024) // 512 KB in 8MB Octal PSRAM (~3s buffer)
-#define UDP_PACKET_MAX    2048
+#define CHUNK_SIZE        1024
 
 // ----------------------------------------------------------------------------
 // CIRCULAR RING BUFFER (Octal PSRAM)
@@ -140,7 +150,10 @@ public:
 // GLOBAL OBJECTS & STATE
 // ----------------------------------------------------------------------------
 PsramRingBuffer* audioBuffer = nullptr;
-WiFiUDP udpAudio;
+WiFiUDP udpAudio9090;
+WiFiUDP udpAudio9091;
+WiFiServer tcpAudioServer(STREAM_PORT_9090);
+WiFiClient tcpAudioClient;
 WebServer server(80);
 DNSServer dnsServer;
 Preferences prefs;
@@ -150,12 +163,14 @@ struct ReceiverState {
   bool isPlaying = true;
   bool isMuted = false;
   uint8_t volume = 85;
-  uint16_t udpPort = DEFAULT_UDP_PORT;
+  uint16_t streamPort = STREAM_PORT_9090;
+  uint32_t bytesReceived = 0;
   uint32_t packetsReceived = 0;
   uint32_t packetsDropped = 0;
-  uint32_t lastPacketTime = 0;
   bool isApMode = false;
-  String currentSsid = "";
+  bool isConnectedToPhoneServer = false;
+  String phoneServerIp = "";
+  String connectionStatus = "Listening on ports 9090 & 9091";
 } state;
 
 // ----------------------------------------------------------------------------
@@ -196,7 +211,7 @@ void setupI2S() {
 }
 
 // ----------------------------------------------------------------------------
-// EMBEDDED WEB CONTROLLER & CAPTIVE PORTAL HTML
+// EMBEDDED WEB CONTROLLER & LIVE AUDIO CONTROL PANEL
 // ----------------------------------------------------------------------------
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -206,18 +221,30 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>ESP32-S3 WiFi Audio Receiver</title>
   <style>
-    :root { --bg: #090d16; --card: #111827; --border: #1f293d; --cyan: #06b6d4; --accent: #3b82f6; --text: #f3f4f6; }
-    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 20px; }
+    :root {
+      --bg: #090d16;
+      --card: #111827;
+      --border: #1f293d;
+      --cyan: #06b6d4;
+      --accent: #3b82f6;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --text: #f3f4f6;
+    }
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 16px; }
     .container { max-width: 520px; margin: 0 auto; }
-    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 20px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
-    h1 { font-size: 1.25rem; font-weight: 700; color: #fff; margin: 0 0 4px; display: flex; align-items: center; gap: 8px; }
-    .badge { font-size: 11px; font-family: monospace; background: rgba(6,182,212,0.15); color: var(--cyan); padding: 2px 8px; border-radius: 4px; border: 1px solid rgba(6,182,212,0.3); }
+    .card { background: var(--card); border: 1px solid var(--border); border-radius: 12px; padding: 20px; margin-bottom: 16px; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+    h1 { font-size: 1.25rem; font-weight: 700; color: #fff; margin: 0 0 4px; display: flex; align-items: center; justify-content: space-between; }
+    .badge { font-size: 11px; font-family: monospace; background: rgba(6,182,212,0.15); color: var(--cyan); padding: 3px 8px; border-radius: 4px; border: 1px solid rgba(6,182,212,0.3); }
+    .badge-green { background: rgba(16,185,129,0.15); color: var(--green); border-color: rgba(16,185,129,0.3); }
     .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 15px 0; }
     .stat { background: #0c1220; padding: 10px 14px; border-radius: 8px; border: 1px solid #1a2234; }
     .stat-label { font-size: 11px; text-transform: uppercase; color: #94a3b8; font-family: monospace; }
     .stat-val { font-size: 18px; font-weight: bold; color: #fff; margin-top: 2px; }
     .btn { background: var(--accent); color: #fff; border: 0; padding: 10px 16px; border-radius: 8px; font-weight: 600; cursor: pointer; width: 100%; box-sizing: border-box; font-size: 14px; }
     .btn:hover { background: #2563eb; }
+    .btn-green { background: #059669; }
+    .btn-green:hover { background: #10b981; }
     .btn-secondary { background: #1e293b; color: #cbd5e1; border: 1px solid #334155; margin-top: 8px; }
     .btn-secondary:hover { background: #334155; }
     input[type=text], input[type=password], input[type=number] { width: 100%; padding: 10px; margin: 6px 0 14px; background: #0c1220; border: 1px solid #2d3748; border-radius: 6px; color: #fff; box-sizing: border-box; font-size: 14px; }
@@ -225,23 +252,23 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     label { font-size: 12px; color: #94a3b8; font-weight: 500; }
     .progress { background: #1e293b; height: 10px; border-radius: 5px; overflow: hidden; margin: 8px 0; }
     .progress-bar { background: var(--cyan); height: 100%; width: 0%; transition: width 0.3s; }
-    .guide-box { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #93c5fd; }
+    .status-banner { background: #0c1220; border-left: 4px solid var(--cyan); padding: 10px 12px; border-radius: 4px; font-size: 13px; margin: 12px 0; color: #e2e8f0; }
+    .guide-box { background: rgba(59,130,246,0.1); border: 1px solid rgba(59,130,246,0.3); padding: 12px; border-radius: 8px; font-size: 12px; line-height: 1.5; color: #93c5fd; margin-bottom: 15px; }
   </style>
 </head>
 <body>
   <div class="container">
+    <!-- Main Controller Card -->
     <div class="card">
-      <div style="display:flex; justify-content:space-between; align-items:center;">
-        <h1>ESP32-S3 Receiver</h1>
+      <h1>
+        <span>ESP32-S3 Audio Receiver</span>
         <span class="badge" id="modeBadge">AP MODE</span>
-      </div>
-      <p style="font-size:12px; color:#64748b; margin:4px 0 16px;">WiFiAudioStreaming (Marco Morosi) &bull; UDA1334A DAC</p>
+      </h1>
+      <p style="font-size:12px; color:#64748b; margin:4px 0 12px;">WiFiAudioStreaming (Marco Morosi) &bull; UDA1334A I2S DAC</p>
 
-      <div class="guide-box">
-        <strong>Android App Setup (WiFiAudioStreaming v1.2):</strong><br>
-        1. Open App &rarr; Set Mode to <b>Transmitter</b><br>
-        2. Set Target IP: <b id="guideIp">192.168.4.1</b><br>
-        3. Set Port: <b id="guidePort">9091</b> &bull; Format: <b>16-bit 44.1kHz Stereo</b>
+      <!-- Live Stream Status -->
+      <div class="status-banner" id="statusBanner">
+        Status: <strong id="statusText">Listening on TCP/UDP 9090 & 9091</strong>
       </div>
 
       <div class="stat-grid">
@@ -256,38 +283,50 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         </div>
       </div>
 
-      <label>Digital Master Volume: <span id="volLabel">85%</span></label>
+      <!-- Volume Slider -->
+      <label>Digital Master Volume: <span id="volLabel" style="color:#fff; font-weight:bold;">85%</span></label>
       <input type="range" id="volSlider" min="0" max="100" value="85" oninput="setVol(this.value)">
 
-      <div style="display:flex; gap:10px; margin-top:10px;">
+      <div style="display:flex; gap:8px; margin-top:8px;">
         <button class="btn btn-secondary" onclick="cmd('mute')">Toggle Mute</button>
         <button class="btn btn-secondary" onclick="cmd('flush')">Clear Buffer</button>
       </div>
     </div>
 
-    <!-- WiFi Config Card -->
+    <!-- Connect to Phone Server Section -->
     <div class="card">
-      <h2 style="font-size:16px; margin:0 0 12px; color:#fff;">Connect to Home Wi-Fi (Optional)</h2>
-      <form action="/savewifi" method="POST">
-        <label>Wi-Fi Network Name (SSID):</label>
-        <input type="text" name="ssid" placeholder="Enter your 2.4GHz Wi-Fi name" required>
-
-        <label>Wi-Fi Password:</label>
-        <input type="password" name="pass" placeholder="Enter Wi-Fi password">
-
-        <label>UDP Audio Port (Default: 9091):</label>
-        <input type="number" name="port" value="9091" min="1024" max="65535">
-
-        <button type="submit" class="btn">Save & Connect to Wi-Fi</button>
+      <h2 style="font-size:15px; margin:0 0 8px; color:#fff;">Phone Says "Waiting for client on port 9090"?</h2>
+      <div class="guide-box">
+        Your phone is running as the audio server! Enter the IP address shown on your Android phone screen to connect the ESP32 directly to your phone.
+      </div>
+      <form action="/connect_phone" method="POST">
+        <label>Your Android Phone's IP Address:</label>
+        <input type="text" name="phone_ip" placeholder="e.g. 192.168.4.2 or 192.168.1.15" required>
+        <label>Port (Default: 9090):</label>
+        <input type="number" name="phone_port" value="9090">
+        <button type="submit" class="btn btn-green">Connect ESP32 to Phone Audio Server</button>
       </form>
     </div>
 
-    <!-- OTA Firmware Card -->
+    <!-- Home Wi-Fi Setup Section -->
     <div class="card">
-      <h2 style="font-size:16px; margin:0 0 12px; color:#fff;">Over-The-Air (OTA) Firmware Update</h2>
+      <h2 style="font-size:15px; margin:0 0 8px; color:#fff;">Connect to Home Wi-Fi Network</h2>
+      <p style="font-size:12px; color:#94a3b8; margin:0 0 12px;">Enables streaming and control via <b>http://wifimusic.local</b> while keeping phone internet active.</p>
+      <form action="/savewifi" method="POST">
+        <label>2.4GHz Wi-Fi Network (SSID):</label>
+        <input type="text" name="ssid" placeholder="Home WiFi SSID" required>
+        <label>Wi-Fi Password:</label>
+        <input type="password" name="pass" placeholder="WiFi Password">
+        <button type="submit" class="btn">Save & Join Home Wi-Fi</button>
+      </form>
+    </div>
+
+    <!-- OTA Firmware Flash -->
+    <div class="card">
+      <h2 style="font-size:15px; margin:0 0 8px; color:#fff;">Over-The-Air (OTA) Firmware Update</h2>
       <form method="POST" action="/update" enctype="multipart/form-data">
-        <input type="file" name="update" style="margin-bottom:12px; font-size:12px; color:#94a3b8;">
-        <button type="submit" class="btn btn-secondary">Upload & Flash Firmware</button>
+        <input type="file" name="update" style="margin-bottom:10px; font-size:12px; color:#94a3b8;">
+        <button type="submit" class="btn btn-secondary">Flash Firmware (.bin)</button>
       </form>
     </div>
   </div>
@@ -298,9 +337,11 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
         document.getElementById('bufBar').style.width = d.bufferPercent + '%';
         document.getElementById('bufVal').innerText = d.bufferPercent.toFixed(1) + '%';
         document.getElementById('pktVal').innerText = d.packetsReceived;
+        document.getElementById('statusText').innerText = d.statusText;
         document.getElementById('modeBadge').innerText = d.isAp ? 'AP: ' + d.ip : 'STA: ' + d.ip;
-        document.getElementById('guideIp').innerText = d.ip;
-        document.getElementById('guidePort').innerText = d.udpPort;
+        if (d.packetsReceived > 0) {
+          document.getElementById('modeBadge').className = 'badge badge-green';
+        }
       }).catch(e => console.error(e));
     }
     setInterval(updateStats, 1000);
@@ -331,35 +372,58 @@ void handleStatus() {
   json += "\"playing\":" + String(state.isPlaying ? "true" : "false") + ",";
   json += "\"muted\":" + String(state.isMuted ? "true" : "false") + ",";
   json += "\"volume\":" + String(state.volume) + ",";
-  json += "\"udpPort\":" + String(state.udpPort) + ",";
+  json += "\"streamPort\":" + String(state.streamPort) + ",";
   json += "\"bufferPercent\":" + String(audioBuffer ? (audioBuffer->getFillRatio() * 100.0f) : 0.0f, 1) + ",";
   json += "\"packetsReceived\":" + String(state.packetsReceived) + ",";
   json += "\"packetsDropped\":" + String(state.packetsDropped) + ",";
   json += "\"isAp\":" + String(state.isApMode ? "true" : "false") + ",";
   json += "\"ip\":\"" + (state.isApMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "\",";
+  json += "\"statusText\":\"" + state.connectionStatus + "\",";
   json += "\"freePsram\":" + String(ESP.getFreePsram()) + ",";
   json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + "}";
   server.send(200, "application/json", json);
+}
+
+void handleConnectPhone() {
+  if (server.hasArg("phone_ip")) {
+    String phoneIp = server.arg("phone_ip");
+    int port = server.hasArg("phone_port") ? server.arg("phone_port").toInt() : 9090;
+    state.phoneServerIp = phoneIp;
+    state.streamPort = port;
+
+    Serial.printf("[CLIENT] Connecting to phone server %s:%d...\n", phoneIp.c_str(), port);
+    state.connectionStatus = "Connecting to phone server " + phoneIp + ":" + String(port) + "...";
+
+    if (tcpAudioClient.connect(phoneIp.c_str(), port)) {
+      state.isConnectedToPhoneServer = true;
+      state.connectionStatus = "Connected to phone " + phoneIp + ":" + String(port) + "! Audio streaming active.";
+      Serial.println("[CLIENT] Successfully connected to phone server!");
+    } else {
+      state.isConnectedToPhoneServer = false;
+      state.connectionStatus = "Connection to " + phoneIp + ":" + String(port) + " failed. Retrying in background...";
+      Serial.println("[CLIENT] Failed to connect to phone server.");
+    }
+
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  } else {
+    server.send(400, "text/plain", "Missing phone_ip parameter");
+  }
 }
 
 void handleSaveWiFi() {
   if (server.hasArg("ssid")) {
     String newSsid = server.arg("ssid");
     String newPass = server.arg("pass");
-    if (server.hasArg("port")) {
-      int p = server.arg("port").toInt();
-      if (p > 1024 && p < 65535) state.udpPort = p;
-    }
 
     prefs.begin("audio-cfg", false);
     prefs.putString("ssid", newSsid);
     prefs.putString("pass", newPass);
-    prefs.putUShort("port", state.udpPort);
     prefs.end();
 
     String resp = "<html><body style='font-family:sans-serif; background:#090d16; color:#fff; text-align:center; padding:50px;'>";
-    resp += "<h2>WiFi Credentials Saved!</h2><p>ESP32-S3 is connecting to " + newSsid + "...</p>";
-    resp += "<p>If connection succeeds, access at <b>http://wifimusic.local</b> or its router IP.</p>";
+    resp += "<h2>WiFi Credentials Saved!</h2><p>Connecting to " + newSsid + "...</p>";
+    resp += "<p>Access the controller at: <b>http://wifimusic.local</b></p>";
     resp += "<p>Rebooting in 3 seconds...</p></body></html>";
     server.send(200, "text/html", resp);
     delay(2000);
@@ -372,6 +436,8 @@ void handleSaveWiFi() {
 void setupWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/connect_phone", HTTP_POST, handleConnectPhone);
+  server.on("/savewifi", HTTP_POST, handleSaveWiFi);
 
   server.on("/api/volume", HTTP_POST, []() {
     if (server.hasArg("val")) {
@@ -392,8 +458,6 @@ void setupWebServer() {
     }
     server.send(200, "application/json", "{\"success\":true}");
   });
-
-  server.on("/savewifi", HTTP_POST, handleSaveWiFi);
 
   // OTA firmware update endpoints
   server.on("/update", HTTP_POST, []() {
@@ -421,13 +485,12 @@ void setupWebServer() {
     }
   });
 
-  // Captive Portal Redirection for Phones (Android generate_204, iOS hotspot-detect, Windows ncsi)
+  // Captive Portal Redirects for Android / iOS
   server.on("/generate_204", handleRoot);
   server.on("/gen_204", handleRoot);
   server.on("/ncsi.txt", handleRoot);
   server.on("/hotspot-detect.html", handleRoot);
   server.onNotFound([]() {
-    // If client was trying to access any outside site, redirect to our captive portal
     server.sendHeader("Location", String("http://") + (state.isApMode ? WiFi.softAPIP().toString() : WiFi.localIP().toString()) + "/", true);
     server.send(302, "text/plain", "");
   });
@@ -440,7 +503,6 @@ void setupWebServer() {
 // FREERTOS AUDIO PLAYBACK TASK (Pinned to Core 1)
 // ----------------------------------------------------------------------------
 void audioPlaybackTask(void* param) {
-  const size_t CHUNK_SIZE = 1024;
   uint8_t dmaBuffer[CHUNK_SIZE];
   size_t bytesWritten = 0;
 
@@ -454,7 +516,6 @@ void audioPlaybackTask(void* param) {
 
     size_t bytesRead = audioBuffer ? audioBuffer->read(dmaBuffer, CHUNK_SIZE) : 0;
     if (bytesRead > 0) {
-      // Digital software volume attenuation
       int16_t* samples = (int16_t*)dmaBuffer;
       size_t sampleCount = bytesRead / 2;
       float volScale = (float)state.volume / 100.0f;
@@ -463,10 +524,8 @@ void audioPlaybackTask(void* param) {
         samples[i] = (int16_t)(samples[i] * volScale);
       }
 
-      // Stream directly to UDA1334A DAC via DMA
       i2s_write(I2S_PORT, dmaBuffer, bytesRead, &bytesWritten, portMAX_DELAY);
     } else {
-      // Output silence when underrun
       memset(dmaBuffer, 0, CHUNK_SIZE);
       i2s_write(I2S_PORT, dmaBuffer, CHUNK_SIZE, &bytesWritten, 10);
       vTaskDelay(pdMS_TO_TICKS(4));
@@ -475,27 +534,95 @@ void audioPlaybackTask(void* param) {
 }
 
 // ----------------------------------------------------------------------------
-// FREERTOS UDP AUDIO RECEIVER TASK (Pinned to Core 0)
+// FREERTOS AUDIO RECEIVER TASK (Pinned to Core 0)
+// Supports:
+// 1. TCP Client connecting to phone server (Port 9090)
+// 2. Incoming TCP Server clients (Port 9090)
+// 3. Incoming UDP packets on Port 9090 & Port 9091
 // ----------------------------------------------------------------------------
-void udpReceiverTask(void* param) {
-  uint8_t packetBuffer[UDP_PACKET_MAX];
-  udpAudio.begin(state.udpPort);
-  Serial.printf("[UDP] Listening for WiFiAudioStreaming on port %u\n", state.udpPort);
+void audioReceiverTask(void* param) {
+  uint8_t packetBuffer[CHUNK_SIZE * 2];
+
+  // Start TCP audio server on port 9090
+  tcpAudioServer.begin();
+  Serial.println("[TCP] Audio server listening on port 9090");
+
+  // Start UDP audio listeners on ports 9090 & 9091
+  udpAudio9090.begin(STREAM_PORT_9090);
+  udpAudio9091.begin(STREAM_PORT_9091);
+  Serial.println("[UDP] Audio listeners active on ports 9090 & 9091");
+
+  WiFiClient incomingTcpClient;
 
   while (true) {
-    int packetSize = udpAudio.parsePacket();
-    if (packetSize > 0) {
-      state.packetsReceived++;
-      state.lastPacketTime = millis();
+    bool receivedData = false;
 
-      int bytesRead = udpAudio.read(packetBuffer, min(packetSize, (int)UDP_PACKET_MAX));
+    // 1. READ FROM ACTIVE TCP CLIENT (Connected to Phone Server)
+    if (tcpAudioClient.connected() && tcpAudioClient.available()) {
+      int bytesRead = tcpAudioClient.read(packetBuffer, sizeof(packetBuffer));
       if (bytesRead > 0 && state.powerOn && audioBuffer) {
-        size_t written = audioBuffer->write(packetBuffer, bytesRead);
-        if (written < (size_t)bytesRead) {
-          state.packetsDropped++;
+        audioBuffer->write(packetBuffer, bytesRead);
+        state.bytesReceived += bytesRead;
+        state.packetsReceived++;
+        receivedData = true;
+      }
+    } else if (state.phoneServerIp.length() > 0 && !tcpAudioClient.connected()) {
+      // Auto-reconnect to phone server if disconnected
+      static uint32_t lastReconnectAttempt = 0;
+      if (millis() - lastReconnectAttempt > 3000) {
+        lastReconnectAttempt = millis();
+        if (tcpAudioClient.connect(state.phoneServerIp.c_str(), state.streamPort)) {
+          state.isConnectedToPhoneServer = true;
+          state.connectionStatus = "Connected to phone " + state.phoneServerIp + ":" + String(state.streamPort);
+          Serial.println("[CLIENT] Reconnected to phone server!");
         }
       }
-    } else {
+    }
+
+    // 2. ACCEPT INCOMING TCP STREAM (If phone connects to ESP32)
+    if (!incomingTcpClient.connected()) {
+      incomingTcpClient = tcpAudioServer.available();
+      if (incomingTcpClient) {
+        state.connectionStatus = "Phone connected via TCP to ESP32:9090";
+        Serial.println("[TCP] Incoming audio stream connected!");
+      }
+    } else if (incomingTcpClient.available()) {
+      int bytesRead = incomingTcpClient.read(packetBuffer, sizeof(packetBuffer));
+      if (bytesRead > 0 && state.powerOn && audioBuffer) {
+        audioBuffer->write(packetBuffer, bytesRead);
+        state.bytesReceived += bytesRead;
+        state.packetsReceived++;
+        receivedData = true;
+      }
+    }
+
+    // 3. READ UDP STREAM ON PORT 9090
+    int udp9090Size = udpAudio9090.parsePacket();
+    if (udp9090Size > 0) {
+      int bytesRead = udpAudio9090.read(packetBuffer, min(udp9090Size, (int)sizeof(packetBuffer)));
+      if (bytesRead > 0 && state.powerOn && audioBuffer) {
+        audioBuffer->write(packetBuffer, bytesRead);
+        state.bytesReceived += bytesRead;
+        state.packetsReceived++;
+        state.connectionStatus = "Streaming via UDP:9090";
+        receivedData = true;
+      }
+    }
+
+    // 4. READ UDP STREAM ON PORT 9091
+    int udp9091Size = udpAudio9091.parsePacket();
+    if (udp9091Size > 0) {
+      int bytesRead = udpAudio9091.read(packetBuffer, min(udp9091Size, (int)sizeof(packetBuffer)));
+      if (bytesRead > 0 && state.powerOn && audioBuffer) {
+        audioBuffer->write(packetBuffer, bytesRead);
+        state.bytesReceived += bytesRead;
+        state.packetsReceived++;
+        state.connectionStatus = "Streaming via UDP:9091";
+        receivedData = true;
+      }
+    }
+
+    if (!receivedData) {
       vTaskDelay(pdMS_TO_TICKS(2));
     }
   }
@@ -508,21 +635,16 @@ void setup() {
   Serial.begin(115200);
   delay(1000);
   Serial.println("\n=======================================================");
-  Serial.println("  ESP32-S3 Audio Streaming Receiver (UDA1334A)");
-  Serial.println("  WiFiAudioStreaming Android Receiver (Marco Morosi)");
+  Serial.println("  ESP32-S3 Audio Receiver for WiFiAudioStreaming v1.2");
+  Serial.println("  Supports Client & Server modes on Port 9090 & 9091");
   Serial.println("=======================================================\n");
 
-  // 1. Initialize PSRAM Ring Buffer
   audioBuffer = new PsramRingBuffer(RING_BUFFER_SIZE);
-
-  // 2. Initialize UDA1334A I2S Peripheral
   setupI2S();
 
-  // 3. Load Wi-Fi Configuration
   prefs.begin("audio-cfg", true);
   String ssid = prefs.getString("ssid", "");
   String pass = prefs.getString("pass", "");
-  state.udpPort = prefs.getUShort("port", DEFAULT_UDP_PORT);
   prefs.end();
 
   bool connected = false;
@@ -547,12 +669,12 @@ void setup() {
       if (MDNS.begin("wifimusic")) {
         Serial.println("[MDNS] Active: http://wifimusic.local");
         MDNS.addService("http", "tcp", 80);
-        MDNS.addService("audio", "udp", state.udpPort);
+        MDNS.addService("audio", "tcp", STREAM_PORT_9090);
+        MDNS.addService("audio", "udp", STREAM_PORT_9090);
       }
     }
   }
 
-  // 4. Start Fallback AP if not connected
   if (!connected) {
     Serial.println("\n[WIFI] No valid network. Starting Captive Access Point 'ESP32-Audio-Setup'...");
     state.isApMode = true;
@@ -565,20 +687,19 @@ void setup() {
     WiFi.softAPConfig(apIP, gateway, subnet);
     WiFi.softAP("ESP32-Audio-Setup", "12345678");
 
-    // Start DNS Server on port 53 to redirect all domains to 192.168.4.1 (Captive Portal)
     dnsServer.start(53, "*", apIP);
     Serial.printf("[WIFI] AP Ready! Connect to 'ESP32-Audio-Setup' (Password: 12345678)\n");
     Serial.printf("[WIFI] Open browser at: http://%s or http://wifimusic.local\n", apIP.toString().c_str());
   }
 
-  // 5. Start Web Server
   setupWebServer();
 
-  // 6. Spawn FreeRTOS Tasks
-  xTaskCreatePinnedToCore(audioPlaybackTask, "AudioPlayback", 8192, NULL, 5, NULL, 1); // Core 1
-  xTaskCreatePinnedToCore(udpReceiverTask,   "UdpReceiver",   8192, NULL, 4, NULL, 0); // Core 0
+  // Core 1: I2S Playback
+  xTaskCreatePinnedToCore(audioPlaybackTask, "AudioPlayback", 8192, NULL, 5, NULL, 1);
+  // Core 0: Multi-mode Audio Receiver (TCP Client/Server + UDP 9090/9091)
+  xTaskCreatePinnedToCore(audioReceiverTask, "AudioReceiver", 8192, NULL, 4, NULL, 0);
 
-  Serial.println("[SYSTEM] Ready! Ready to receive audio stream.");
+  Serial.println("[SYSTEM] Ready! Listening on ports 9090 and 9091.");
 }
 
 void loop() {

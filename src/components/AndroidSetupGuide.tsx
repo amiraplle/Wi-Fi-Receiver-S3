@@ -40,14 +40,19 @@ export const AndroidSetupGuide: React.FC = () => {
       {/* AP Mode Direct Connect Highlight */}
       <div className="p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-lg flex items-start gap-3">
         <Radio className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
-        <div className="space-y-1 text-xs text-slate-300">
+        <div className="space-y-1.5 text-xs text-slate-300">
           <div className="text-emerald-400 font-mono font-bold uppercase tracking-wider">
             Direct Phone AP Mode (No Home Wi-Fi Router Required!)
           </div>
           <p className="leading-relaxed">
             When you power on the ESP32-S3, it immediately broadcasts an Access Point named <strong className="text-white font-mono">ESP32-Audio-Setup</strong> (password: <code className="text-amber-300">12345678</code>). Connect your phone to this Wi-Fi.
-            The Captive Portal pop-up will open automatically, or visit <strong className="text-cyan-300">http://192.168.4.1</strong> in Chrome. In the <strong>WiFiAudioStreaming v1.2 Android app</strong>, simply point your stream to IP <strong className="text-cyan-300 font-mono">192.168.4.1</strong> port <strong className="text-amber-300 font-mono">9091</strong>!
           </p>
+          <div className="p-3 bg-slate-900/90 rounded border border-emerald-500/20 space-y-1">
+            <strong className="text-amber-300 font-mono">If phone shows &quot;Waiting for client on port 9090&quot;:</strong>
+            <p className="text-slate-300">
+              The phone is running as the audio host server! Open <strong className="text-cyan-300">http://192.168.4.1</strong> on your phone browser, enter your phone&apos;s IP (e.g. <code className="text-cyan-200">192.168.4.2</code>), and tap <strong className="text-emerald-400">&quot;Connect ESP32 to Phone Audio Server&quot;</strong>. The ESP32 will immediately hook onto your phone stream!
+            </p>
+          </div>
         </div>
       </div>
 
@@ -57,10 +62,10 @@ export const AndroidSetupGuide: React.FC = () => {
           <div className="text-xs font-mono text-cyan-400 font-bold">STEP 01</div>
           <div className="text-sm font-semibold text-white">App Mode</div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Open the app and select <strong className="text-slate-200">Transmitter Mode</strong> (or Server/Streamer).
+            Open the app and select <strong className="text-slate-200">Transmitter Mode</strong>.
           </p>
           <div className="text-[11px] font-mono text-slate-500 pt-1">
-            Setting: Mode = Transmitter
+            Port: 9090 or 9091
           </div>
         </div>
 
@@ -69,7 +74,7 @@ export const AndroidSetupGuide: React.FC = () => {
           <div className="text-xs font-mono text-cyan-400 font-bold">STEP 02</div>
           <div className="text-sm font-semibold text-white">Audio Source</div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Choose <strong className="text-slate-200">Internal Audio</strong> (Android 10+) to capture Spotify/YouTube or <strong className="text-slate-200">Microphone</strong>.
+            Choose <strong className="text-slate-200">Internal Audio</strong> (Android 10+) to capture Spotify/YouTube/Media.
           </p>
           <div className="text-[11px] font-mono text-slate-500 pt-1">
             AudioPlaybackCapture API
@@ -81,10 +86,10 @@ export const AndroidSetupGuide: React.FC = () => {
           <div className="text-xs font-mono text-cyan-400 font-bold">STEP 03</div>
           <div className="text-sm font-semibold text-white">Destination Target</div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Enter <strong className="text-cyan-300">wifimusic.local</strong> (or your ESP32 IP) and set Port to <strong className="text-amber-300">9091</strong>.
+            Target IP: <strong className="text-cyan-300">192.168.4.1</strong> (in AP mode) or <strong className="text-cyan-300">wifimusic.local</strong>.
           </p>
           <div className="text-[11px] font-mono text-slate-500 pt-1">
-            Zero-Config mDNS hostname
+            Port: 9090 (TCP/UDP) or 9091
           </div>
         </div>
 
@@ -96,7 +101,7 @@ export const AndroidSetupGuide: React.FC = () => {
             Select <strong className="text-slate-200">16-bit PCM, 44100 Hz, Stereo</strong>. Hit Start Streaming on your phone!
           </p>
           <div className="text-[11px] font-mono text-slate-500 pt-1">
-            No lossy re-encoding
+            UDA1334A Direct I2S
           </div>
         </div>
       </div>
