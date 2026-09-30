@@ -15,15 +15,40 @@ export const AndroidSetupGuide: React.FC = () => {
           </h3>
         </div>
 
-        <a
-          href="https://github.com/marcomorosi06/WiFiAudioStreaming-Desktop"
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1.5 text-xs font-mono text-cyan-400 hover:text-cyan-300 transition-colors"
-        >
-          <span>WiFiAudioStreaming Project</span>
-          <ExternalLink className="w-3.5 h-3.5" />
-        </a>
+        <div className="flex items-center gap-3">
+          <a
+            href="https://github.com/marcomorosi06/WiFiAudioStreaming-Android/releases/download/v1.2/wifi-audio-streaming-v1.2.apk"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 rounded text-xs font-mono transition-colors"
+          >
+            <span>Download APK v1.2</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+          <a
+            href="https://github.com/marcomorosi06/WiFiAudioStreaming-Android"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-1.5 text-xs font-mono text-slate-400 hover:text-slate-300 transition-colors"
+          >
+            <span>GitHub Repo</span>
+            <ExternalLink className="w-3.5 h-3.5" />
+          </a>
+        </div>
+      </div>
+
+      {/* AP Mode Direct Connect Highlight */}
+      <div className="p-4 bg-emerald-950/20 border border-emerald-500/30 rounded-lg flex items-start gap-3">
+        <Radio className="w-5 h-5 text-emerald-400 shrink-0 mt-0.5" />
+        <div className="space-y-1 text-xs text-slate-300">
+          <div className="text-emerald-400 font-mono font-bold uppercase tracking-wider">
+            Direct Phone AP Mode (No Home Wi-Fi Router Required!)
+          </div>
+          <p className="leading-relaxed">
+            When you power on the ESP32-S3, it immediately broadcasts an Access Point named <strong className="text-white font-mono">ESP32-Audio-Setup</strong> (password: <code className="text-amber-300">12345678</code>). Connect your phone to this Wi-Fi.
+            The Captive Portal pop-up will open automatically, or visit <strong className="text-cyan-300">http://192.168.4.1</strong> in Chrome. In the <strong>WiFiAudioStreaming v1.2 Android app</strong>, simply point your stream to IP <strong className="text-cyan-300 font-mono">192.168.4.1</strong> port <strong className="text-amber-300 font-mono">9091</strong>!
+          </p>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
