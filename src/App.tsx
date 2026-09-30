@@ -122,7 +122,7 @@ export default function App() {
 
         {/* Tab 2: Live Web Controller */}
         {activeTab === 'controller' && (
-          <div className="space-y-8">
+          <div className="w-full">
             <WebController
               status={status}
               onUpdateStatus={handleUpdateStatus}
@@ -130,7 +130,6 @@ export default function App() {
               isSimulated={isSimulated}
               espIp={espIp}
             />
-            <AndroidSetupGuide />
           </div>
         )}
 
