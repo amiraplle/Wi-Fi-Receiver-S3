@@ -1,31 +1,17 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
-  Power,
-  Play,
-  Pause,
-  Square,
   Volume2,
   VolumeX,
-  Sliders,
+  RotateCcw,
+  RefreshCw,
+  CheckCircle,
   Wifi,
   ArrowUpCircle,
-  Radio,
-  Cast,
-  Disc3,
-  CheckCircle,
-  Link,
-  Info,
-  Server,
   Activity,
-  Layers,
-  Sparkles,
-  RefreshCw,
-  Zap,
   SlidersHorizontal,
-  Smartphone,
-  Cpu,
-  ShieldCheck,
-  RotateCcw
+  Server,
+  Disc3,
+  HardDrive
 } from 'lucide-react';
 import { ReceiverStatus, WiFiConfig } from '../types/index.ts';
 import { audioEngine } from '../utils/audioEngine.ts';
@@ -45,10 +31,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   isSimulated,
   espIp,
 }) => {
-  // Mobile app bottom navigation screens
-  const [activeTab, setActiveTab] = useState<'player' | 'connect' | 'eq' | 'wifi' | 'ota' | 'status'>('player');
+  // Navigation tabs
+  const [activeTab, setActiveTab] = useState<'player' | 'hook' | 'tone' | 'wifi' | 'ota' | 'status'>('player');
 
-  // Phone audio server manual handshake inputs
+  // Phone Hook form
   const [phoneServerIp, setPhoneServerIp] = useState('192.168.254.113');
   const [phoneServerPort, setPhoneServerPort] = useState('9090');
   const [isConnectingPhone, setIsConnectingPhone] = useState(false);
@@ -76,23 +62,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
   // EQ Presets
   const [activePreset, setActivePreset] = useState<'flat' | 'bass' | 'vocal' | 'club'>('flat');
 
-  // Canvas visualizer reference
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-
   const isPowerOn = status.powerState === 'on';
   const isPlaying = isPowerOn && status.playbackState === 'playing' && !status.isMuted;
-
-  // Toggle Power
-  const handleTogglePower = () => {
-    const next = isPowerOn ? 'standby' : 'on';
-    if (next === 'standby') {
-      audioEngine.stopSimulator();
-      onUpdateStatus({ powerState: 'standby', playbackState: 'stopped', isMuted: true });
-    } else {
-      onUpdateStatus({ powerState: 'on', playbackState: 'playing', isMuted: false });
-      if (isSimulated) audioEngine.playSimulator();
-    }
-  };
 
   // Play / Pause
   const handlePlayPause = () => {
@@ -130,16 +101,9 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     setActivePreset(preset);
     let b = 0;
     let t = 0;
-    if (preset === 'bass') {
-      b = 6;
-      t = 1;
-    } else if (preset === 'vocal') {
-      b = -2;
-      t = 4;
-    } else if (preset === 'club') {
-      b = 5;
-      t = 4;
-    }
+    if (preset === 'bass') { b = 6; t = 1; }
+    else if (preset === 'vocal') { b = -2; t = 4; }
+    else if (preset === 'club') { b = 5; t = 4; }
     onUpdateStatus({ bassGain: b, trebleGain: t });
     audioEngine.setEQ(b, t);
   };
@@ -151,13 +115,14 @@ export const MobileApp: React.FC<MobileAppProps> = ({
       setIsConnectingPhone(false);
       setPhoneConnected(true);
       onUpdateStatus({
-        nowPlayingTrack: 'Streaming from Android',
+        nowPlayingTrack: 'Phone Audio Stream',
         nowPlayingArtist: `Host: ${phoneServerIp}:${phoneServerPort}`,
         nowPlayingApp: 'WiFiAudioStreaming v1.2',
         playbackState: 'playing',
         packetsReceivedPerSec: 184,
       });
       if (isSimulated) audioEngine.playSimulator();
+      setActiveTab('player');
     }, 600);
   };
 
@@ -212,256 +177,152 @@ export const MobileApp: React.FC<MobileAppProps> = ({
     }, 100);
   };
 
-  // Canvas visualizer animation
-  useEffect(() => {
-    let animId: number;
-    const render = () => {
-      const canvas = canvasRef.current;
-      if (canvas) {
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          const width = canvas.width;
-          const height = canvas.height;
-          ctx.clearRect(0, 0, width, height);
-
-          if (isPlaying) {
-            const waveData = audioEngine.getWaveformData();
-            ctx.lineWidth = 2.5;
-            const grad = ctx.createLinearGradient(0, 0, width, 0);
-            grad.addColorStop(0, '#06b6d4');
-            grad.addColorStop(0.5, '#3b82f6');
-            grad.addColorStop(1, '#10b981');
-            ctx.strokeStyle = grad;
-            ctx.beginPath();
-
-            const sliceWidth = width / (waveData.length || 64);
-            let x = 0;
-            for (let i = 0; i < (waveData.length || 64); i++) {
-              const v = (waveData[i] || (Math.sin(i * 0.2 + Date.now() * 0.008) * 35 + 128)) / 128.0;
-              const y = (v * height) / 2;
-              if (i === 0) ctx.moveTo(x, y);
-              else ctx.lineTo(x, y);
-              x += sliceWidth;
-            }
-            ctx.stroke();
-          } else {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.1)';
-            ctx.lineWidth = 1;
-            ctx.beginPath();
-            ctx.moveTo(0, height / 2);
-            ctx.lineTo(width, height / 2);
-            ctx.stroke();
-          }
-        }
-      }
-      animId = requestAnimationFrame(render);
-    };
-    animId = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(animId);
-  }, [isPlaying]);
-
   return (
     <div className="w-full flex justify-center py-2 sm:py-6">
-      {/* Native Mobile Web App Container */}
-      <div className="w-full max-w-md bg-slate-950 text-slate-100 rounded-3xl border border-slate-800 shadow-[0_20px_50px_rgba(0,0,0,0.85)] flex flex-col min-h-[760px] max-h-[880px] overflow-hidden relative select-none">
+      {/* Container matching screenshot */}
+      <div className="w-full max-w-[420px] bg-[#020712] text-slate-100 rounded-3xl border border-slate-800/90 shadow-[0_25px_60px_rgba(0,0,0,0.9)] flex flex-col min-h-[640px] overflow-hidden relative select-none">
         
-        {/* Top App Header */}
-        <header className="sticky top-0 z-30 px-5 py-3.5 bg-slate-950/90 backdrop-blur-md border-b border-slate-800/80 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <span
-              className={`w-2.5 h-2.5 rounded-full transition-all ${
-                isPowerOn
-                  ? 'bg-emerald-400 shadow-[0_0_10px_#10b981]'
-                  : 'bg-slate-600'
-              }`}
-            />
-            <div>
-              <div className="text-xs font-bold tracking-tight text-white flex items-center gap-1.5 font-mono">
-                <span>{phoneConnected ? 'STREAMING ACTIVE' : 'ESP32-S3 RECEIVER'}</span>
-              </div>
-              <div className="text-[10px] text-slate-400 font-mono">
-                {isSimulated ? 'Local Simulator' : `IP: ${status.ipAddress}`}
-              </div>
-            </div>
+        {/* Top Header matching screenshot */}
+        <header className="px-6 pt-6 pb-4 flex items-center justify-between">
+          <div>
+            <div className="text-xl font-bold tracking-tight text-white leading-tight">ESP32-S3</div>
+            <div className="text-xl font-bold tracking-tight text-white leading-tight">AudioLink</div>
           </div>
 
-          <div className="flex items-center gap-2">
-            <span className="text-[10px] font-mono text-cyan-400 px-2 py-0.5 rounded-full bg-cyan-950/70 border border-cyan-800/50">
-              {status.wifiSsid || 'AP Mode'}
-            </span>
-            <button
-              onClick={handleTogglePower}
-              className={`p-2 rounded-full transition-all ${
-                isPowerOn
-                  ? 'bg-emerald-500/20 text-emerald-400 hover:bg-emerald-500/30'
-                  : 'bg-slate-800 text-slate-400 hover:text-white'
-              }`}
-              title="Power State"
-            >
-              <Power className="w-3.5 h-3.5" />
-            </button>
+          <div className="flex items-center gap-2 px-3.5 py-1.5 rounded-lg border border-cyan-800/60 bg-cyan-950/30 text-cyan-300 font-mono text-xs shadow-sm">
+            <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse" />
+            <span>{isSimulated ? 'Browser Simulator' : `Device: ${espIp}`}</span>
           </div>
         </header>
 
-        {/* Scrollable Screen Content Area */}
-        <main className="flex-1 overflow-y-auto px-4 py-4 space-y-4">
+        {/* Screen Content */}
+        <main className="flex-1 px-5 py-2 flex flex-col justify-between space-y-4">
           
           {/* ======================================================== */}
-          {/* SCREEN 1: NOW PLAYING / LIVE STREAM PLAYER */}
+          {/* TAB 1: PLAYER SCREEN (EXACT MATCH TO USER SCREENSHOT)    */}
           {/* ======================================================== */}
           {activeTab === 'player' && (
-            <div className="space-y-4">
-              {/* Artwork Card */}
-              <div className="relative rounded-2xl overflow-hidden aspect-square border border-slate-800 bg-gradient-to-b from-slate-900 to-black shadow-xl group">
-                <img
-                  src={status.albumArtUrl || 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop&q=80'}
-                  alt="Streaming Album Art"
-                  className={`w-full h-full object-cover transition-transform duration-700 ${
-                    isPlaying ? 'scale-105' : 'scale-100 opacity-60 grayscale'
-                  }`}
-                />
-
-                {/* Status Badges */}
-                <div className="absolute top-3 left-3 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[11px] font-medium text-white shadow-lg">
-                  <Cast className={`w-3.5 h-3.5 ${isPlaying ? 'text-cyan-400 animate-pulse' : 'text-slate-400'}`} />
-                  <span>WiFiAudioStreaming v1.2</span>
-                </div>
-
-                <div className="absolute top-3 right-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-md border border-white/10 text-[10px] font-mono text-cyan-300">
-                  <span>PSRAM Buffer: {status.bufferUsagePercent}%</span>
-                </div>
-
-                <div className="absolute bottom-3 left-3 flex items-center gap-1 px-2.5 py-1 rounded-full bg-black/80 backdrop-blur-md border border-slate-700/80 text-[10px] font-mono text-slate-300">
-                  <span>UDA1334A &bull; 16-bit 44.1kHz</span>
-                </div>
-              </div>
-
-              {/* Real-time Waveform Canvas */}
-              <div className="bg-slate-900/90 rounded-2xl p-2.5 border border-slate-800/80">
-                <div className="flex justify-between items-center px-1 mb-1 text-[10px] font-mono text-slate-400">
-                  <span>I2S DMA AUDIO STREAM</span>
-                  <span className={isPlaying ? 'text-emerald-400' : 'text-slate-500'}>
-                    {isPlaying ? '● 44,100 Hz' : 'IDLE'}
-                  </span>
-                </div>
-                <canvas
-                  ref={canvasRef}
-                  width={340}
-                  height={42}
-                  className="w-full h-10 rounded bg-black/50"
-                />
-              </div>
-
-              {/* Track Metadata */}
-              <div className="text-center px-2 space-y-0.5">
-                <h2 className="text-base font-bold text-white tracking-tight truncate">
-                  {isPowerOn ? status.nowPlayingTrack : 'Receiver in Standby'}
-                </h2>
-                <p className="text-xs text-slate-400 font-mono truncate">
-                  {isPowerOn ? status.nowPlayingArtist : 'Tap power icon to activate'}
+            <div className="space-y-6 pt-2">
+              
+              {/* Track Title & Artist */}
+              <div className="text-center space-y-1">
+                <h1 className="text-2xl font-bold text-white tracking-tight">
+                  {status.nowPlayingTrack || 'Midnight City'}
+                </h1>
+                <p className="text-sm font-medium text-slate-400">
+                  {status.nowPlayingArtist || 'M83'}
                 </p>
               </div>
 
-              {/* Master Hardware Volume Slider */}
-              <div className="bg-slate-900/80 rounded-2xl p-3.5 border border-slate-800 space-y-2">
+              {/* Hardware Volume Card */}
+              <div className="bg-[#050f24] rounded-2xl p-4 border border-slate-800/80 space-y-3 shadow-inner">
                 <div className="flex items-center justify-between text-xs font-mono">
                   <div className="flex items-center gap-2 text-slate-300">
                     <button
                       onClick={handleToggleMute}
-                      className={`p-1 rounded transition-colors ${
-                        status.isMuted ? 'text-rose-400 bg-rose-950/50' : 'text-slate-400 hover:text-white'
-                      }`}
+                      className="text-slate-400 hover:text-white transition-colors"
                       title="Toggle Mute"
                     >
-                      {status.isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+                      {status.isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-slate-300" />}
                     </button>
-                    <span className="font-semibold uppercase text-slate-400 text-[11px]">Hardware Volume</span>
+                    <span className="font-semibold text-slate-300 text-xs tracking-wider">HARDWARE VOLUME</span>
                   </div>
-                  <span className="font-bold text-cyan-400">{status.volume}%</span>
+                  <span className="font-bold text-[#00c5e0] text-sm tabular-nums">{status.volume}%</span>
                 </div>
 
-                <input
-                  type="range"
-                  min="0"
-                  max="100"
-                  value={status.volume}
-                  onChange={(e) => handleVolume(Number(e.target.value))}
-                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
-                />
+                <div className="relative flex items-center">
+                  <input
+                    type="range"
+                    min="0"
+                    max="100"
+                    value={status.volume}
+                    onChange={(e) => handleVolume(Number(e.target.value))}
+                    className="w-full h-1.5 bg-[#142342] rounded-lg appearance-none cursor-pointer accent-[#00c5e0]"
+                  />
+                </div>
               </div>
 
-              {/* Transport Buttons */}
-              <div className="flex items-center justify-center gap-5 pt-1">
+              {/* Transport Buttons: Stop, Large Cyan Play/Pause, Tone */}
+              <div className="flex items-center justify-center gap-6 py-2">
+                {/* Stop Button */}
                 <button
                   onClick={handleStop}
-                  disabled={!isPowerOn}
-                  className="p-3.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white active:scale-95 transition-all disabled:opacity-40"
+                  className="w-14 h-14 rounded-full bg-[#0c1833] border border-slate-800/90 text-slate-300 flex items-center justify-center hover:bg-[#142347] active:scale-95 transition-all shadow-md"
                   title="Stop & Flush Buffer"
                 >
-                  <Square className="w-4 h-4 fill-current" />
+                  <div className="w-4 h-4 rounded-sm bg-slate-300" />
                 </button>
 
+                {/* Big Glowing Cyan Play/Pause Button */}
                 <button
                   onClick={handlePlayPause}
-                  className={`p-4 rounded-full shadow-lg active:scale-95 transition-all ${
-                    isPlaying
-                      ? 'bg-cyan-500 text-slate-950 shadow-cyan-500/30'
-                      : 'bg-white text-slate-950 hover:bg-slate-200'
-                  }`}
+                  className="w-20 h-20 rounded-full bg-[#00c5e0] text-black flex items-center justify-center shadow-[0_0_30px_rgba(0,197,224,0.45)] hover:bg-[#22d8f0] active:scale-95 transition-all"
                   title={isPlaying ? 'Pause' : 'Play'}
                 >
                   {isPlaying ? (
-                    <Pause className="w-6 h-6 fill-current" />
+                    <div className="flex gap-1.5">
+                      <div className="w-2 h-7 bg-black rounded-sm" />
+                      <div className="w-2 h-7 bg-black rounded-sm" />
+                    </div>
                   ) : (
-                    <Play className="w-6 h-6 fill-current ml-0.5" />
+                    <div className="w-0 h-0 border-y-[12px] border-y-transparent border-l-[20px] border-l-black ml-1.5" />
                   )}
                 </button>
 
+                {/* Tone / EQ Shortcut Button */}
                 <button
-                  onClick={() => setActiveTab('eq')}
-                  className="p-3.5 rounded-full bg-slate-900 border border-slate-800 text-slate-400 hover:text-white active:scale-95 transition-all"
-                  title="Equalizer"
+                  onClick={() => setActiveTab('tone')}
+                  className="w-14 h-14 rounded-full bg-[#0c1833] border border-slate-800/90 text-slate-300 flex items-center justify-center hover:bg-[#142347] active:scale-95 transition-all shadow-md"
+                  title="Equalizer & Tone"
                 >
-                  <SlidersHorizontal className="w-4 h-4" />
+                  <SlidersHorizontal className="w-5 h-5 text-slate-300" />
                 </button>
               </div>
 
-              {/* Quick Android Connect Pill */}
+              {/* Android Audio Server Hook Card */}
               <div
-                onClick={() => setActiveTab('connect')}
-                className="cursor-pointer p-3 bg-cyan-950/30 border border-cyan-800/40 rounded-2xl flex items-center justify-between text-xs transition-colors hover:bg-cyan-950/50"
+                onClick={() => setActiveTab('hook')}
+                className="cursor-pointer p-4 bg-[#031528] border border-cyan-800/50 rounded-2xl flex items-center justify-between transition-all hover:bg-[#051e38] shadow-md group"
               >
-                <div className="flex items-center gap-2">
-                  <Server className="w-4 h-4 text-cyan-400 shrink-0" />
+                <div className="flex items-center gap-3">
+                  <div className="text-[#00c5e0] p-1 rounded-lg bg-cyan-950/60 border border-cyan-800/40">
+                    <Server className="w-5 h-5 text-[#00c5e0]" />
+                  </div>
                   <div>
-                    <div className="font-semibold text-white">Android Audio Server Hook</div>
-                    <div className="text-[10px] text-cyan-300 font-mono">Port 9090 &bull; Fast Registration</div>
+                    <div className="font-bold text-white text-sm">Android Audio Server Hook</div>
+                    <div className="text-xs text-[#00c5e0] font-mono mt-0.5">
+                      Port 9090 &bull; Fast Registration
+                    </div>
                   </div>
                 </div>
-                <span className="text-[11px] font-mono text-cyan-400">Open &rarr;</span>
+
+                <div className="flex items-center text-xs font-semibold text-[#00c5e0] group-hover:translate-x-0.5 transition-transform font-mono">
+                  Open &rarr;
+                </div>
               </div>
+
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* SCREEN 2: PHONE HOOK (PORT 9090) */}
+          {/* TAB 2: HOOK (PORT 9090 ANDROID SERVER)                   */}
           {/* ======================================================== */}
-          {activeTab === 'connect' && (
-            <div className="space-y-4">
-              <div className="p-4 bg-slate-900/80 rounded-2xl border border-slate-800 space-y-1">
+          {activeTab === 'hook' && (
+            <div className="space-y-4 pt-2">
+              <div className="p-4 bg-[#050f24] rounded-2xl border border-slate-800 space-y-1.5">
                 <div className="text-sm font-bold text-white flex items-center gap-2">
-                  <Server className="w-4 h-4 text-cyan-400" />
+                  <Server className="w-4 h-4 text-[#00c5e0]" />
                   <span>WiFiAudioStreaming Android Hook</span>
                 </div>
                 <p className="text-xs text-slate-400 leading-relaxed">
-                  When your Android phone displays <strong className="text-amber-300 font-mono">&quot;Waiting for client on port 9090&quot;</strong>, enter its IP address below. The ESP32 will send the UDP registration beacon to trigger transmission!
+                  When your Android phone says <strong className="text-amber-300 font-mono">&quot;Waiting for client on port 9090&quot;</strong>, enter its IP address below. The ESP32 will send the UDP registration beacon to trigger transmission!
                 </p>
               </div>
 
-              <form onSubmit={handleConnectPhoneServer} className="space-y-3.5 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+              <form onSubmit={handleConnectPhoneServer} className="space-y-3.5 bg-[#050f24] p-4 rounded-2xl border border-slate-800">
                 <div>
                   <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                    Phone IP Address (From Android App)
+                    Phone IP Address
                   </label>
                   <input
                     type="text"
@@ -469,60 +330,54 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     value={phoneServerIp}
                     onChange={(e) => setPhoneServerIp(e.target.value)}
                     placeholder="e.g. 192.168.254.113"
-                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00c5e0]"
                   />
                 </div>
 
                 <div>
                   <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                    Audio Port
+                    Port
                   </label>
                   <input
                     type="number"
                     value={phoneServerPort}
                     onChange={(e) => setPhoneServerPort(e.target.value)}
                     placeholder="9090"
-                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00c5e0]"
                   />
                 </div>
 
                 <button
                   type="submit"
                   disabled={isConnectingPhone}
-                  className="w-full py-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-950/50 active:scale-[0.98]"
+                  className="w-full py-3 text-xs font-semibold bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl transition-all shadow-lg active:scale-[0.98]"
                 >
-                  <Link className="w-4 h-4" />
-                  <span>{isConnectingPhone ? 'Connecting to Phone...' : 'Connect ESP32 to Phone Audio'}</span>
+                  {isConnectingPhone ? 'Linking to Phone...' : 'Link ESP32 to Phone Audio'}
                 </button>
               </form>
 
               {phoneConnected && (
-                <div className="p-3.5 bg-emerald-950/40 border border-emerald-500/40 rounded-2xl text-xs text-emerald-400 font-mono flex items-center gap-2">
+                <div className="p-3 bg-emerald-950/50 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-mono flex items-center gap-2">
                   <CheckCircle className="w-4 h-4 shrink-0" />
-                  <span>Connected to phone audio server! Now playing through UDA1334A DAC.</span>
+                  <span>Hooked to phone server! Audio playing through DAC.</span>
                 </div>
               )}
-
-              <div className="p-3.5 bg-slate-900/60 rounded-2xl border border-slate-800 text-[11px] text-slate-400 space-y-1">
-                <div className="font-semibold text-slate-300">Direct Broadcast Stream (Port 9091):</div>
-                <div>If your app broadcasts outbound UDP packets, stream directly to ESP32 IP: <code className="text-cyan-300 font-mono">{status.ipAddress}</code> on port <code className="text-amber-300 font-mono">9090</code> or <code className="text-amber-300 font-mono">9091</code>.</div>
-              </div>
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* SCREEN 3: EQUALIZER & TONE */}
+          {/* TAB 3: TONE (EQUALIZER)                                  */}
           {/* ======================================================== */}
-          {activeTab === 'eq' && (
-            <div className="space-y-4">
+          {activeTab === 'tone' && (
+            <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between">
-                <div className="text-sm font-bold text-white flex items-center gap-1.5">
-                  <SlidersHorizontal className="w-4 h-4 text-cyan-400" />
-                  <span>Hardware Tone &amp; EQ</span>
+                <div className="text-sm font-bold text-white flex items-center gap-2">
+                  <SlidersHorizontal className="w-4 h-4 text-[#00c5e0]" />
+                  <span>Hardware Tone &amp; Equalizer</span>
                 </div>
                 <button
                   onClick={() => applyPreset('flat')}
-                  className="text-xs text-cyan-400 font-mono flex items-center gap-1 hover:underline"
+                  className="text-xs text-[#00c5e0] font-mono flex items-center gap-1 hover:underline"
                 >
                   <RotateCcw className="w-3 h-3" />
                   <span>Reset</span>
@@ -542,8 +397,8 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     onClick={() => applyPreset(p.id as any)}
                     className={`py-2 rounded-xl text-xs font-mono font-medium transition-colors ${
                       activePreset === p.id
-                        ? 'bg-cyan-600 text-white font-bold'
-                        : 'bg-slate-900 text-slate-400 border border-slate-800 hover:text-white'
+                        ? 'bg-[#00c5e0] text-black font-bold'
+                        : 'bg-[#050f24] text-slate-400 border border-slate-800 hover:text-white'
                     }`}
                   >
                     {p.label}
@@ -552,10 +407,10 @@ export const MobileApp: React.FC<MobileAppProps> = ({
               </div>
 
               {/* Bass Slider */}
-              <div className="bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+              <div className="bg-[#050f24] p-3.5 rounded-2xl border border-slate-800 space-y-2">
                 <div className="flex justify-between text-xs font-mono text-slate-400">
                   <span>Bass Gain (Low-shelf)</span>
-                  <span className="text-cyan-400 font-semibold">{status.bassGain > 0 ? `+${status.bassGain}` : status.bassGain} dB</span>
+                  <span className="text-[#00c5e0] font-semibold">{status.bassGain > 0 ? `+${status.bassGain}` : status.bassGain} dB</span>
                 </div>
                 <input
                   type="range"
@@ -567,15 +422,15 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     onUpdateStatus({ bassGain: b });
                     audioEngine.setEQ(b, status.trebleGain);
                   }}
-                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-1.5 bg-[#142342] rounded-lg appearance-none cursor-pointer accent-[#00c5e0]"
                 />
               </div>
 
               {/* Treble Slider */}
-              <div className="bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+              <div className="bg-[#050f24] p-3.5 rounded-2xl border border-slate-800 space-y-2">
                 <div className="flex justify-between text-xs font-mono text-slate-400">
                   <span>Treble Gain (High-shelf)</span>
-                  <span className="text-cyan-400 font-semibold">{status.trebleGain > 0 ? `+${status.trebleGain}` : status.trebleGain} dB</span>
+                  <span className="text-[#00c5e0] font-semibold">{status.trebleGain > 0 ? `+${status.trebleGain}` : status.trebleGain} dB</span>
                 </div>
                 <input
                   type="range"
@@ -587,12 +442,12 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     onUpdateStatus({ trebleGain: t });
                     audioEngine.setEQ(status.bassGain, t);
                   }}
-                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-1.5 bg-[#142342] rounded-lg appearance-none cursor-pointer accent-[#00c5e0]"
                 />
               </div>
 
               {/* Balance Slider */}
-              <div className="bg-slate-900/80 p-3.5 rounded-2xl border border-slate-800 space-y-2">
+              <div className="bg-[#050f24] p-3.5 rounded-2xl border border-slate-800 space-y-2">
                 <div className="flex justify-between text-xs font-mono text-slate-400">
                   <span>Stereo Balance</span>
                   <span className="text-white">
@@ -609,38 +464,37 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                     onUpdateStatus({ balance: bal });
                     audioEngine.setBalance(bal);
                   }}
-                  className="w-full h-2 bg-slate-800 rounded-lg appearance-none cursor-pointer accent-cyan-400"
+                  className="w-full h-1.5 bg-[#142342] rounded-lg appearance-none cursor-pointer accent-[#00c5e0]"
                 />
               </div>
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* SCREEN 4: WI-FI SETUP */}
+          {/* TAB 4: WI-FI SETUP                                       */}
           {/* ======================================================== */}
           {activeTab === 'wifi' && (
-            <div className="space-y-4">
+            <div className="space-y-4 pt-2">
               <div className="flex items-center justify-between">
                 <div>
                   <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                    <Wifi className="w-4 h-4 text-cyan-400" />
+                    <Wifi className="w-4 h-4 text-[#00c5e0]" />
                     <span>Wi-Fi Network Setup</span>
                   </h3>
-                  <p className="text-[11px] text-slate-400">Join your 2.4GHz home router.</p>
+                  <p className="text-[11px] text-slate-400">Connect to your 2.4GHz home router.</p>
                 </div>
                 <button
                   onClick={handleScanWifi}
                   disabled={isScanning}
-                  className="px-2.5 py-1 text-xs font-mono rounded-lg bg-slate-900 border border-slate-800 text-cyan-400 hover:text-cyan-300 flex items-center gap-1"
+                  className="px-2.5 py-1 text-xs font-mono rounded-lg bg-[#050f24] border border-slate-800 text-[#00c5e0] flex items-center gap-1"
                 >
                   <RefreshCw className={`w-3 h-3 ${isScanning ? 'animate-spin' : ''}`} />
                   <span>Scan</span>
                 </button>
               </div>
 
-              {/* Scanned SSIDs list */}
               {scannedAps.length > 0 && (
-                <div className="bg-slate-900/70 rounded-2xl p-3 border border-slate-800 space-y-1.5">
+                <div className="bg-[#050f24] rounded-2xl p-3 border border-slate-800 space-y-1.5">
                   <div className="text-[10px] font-mono text-slate-500 uppercase px-1">Nearby Networks</div>
                   {scannedAps.map((ap) => (
                     <div
@@ -649,7 +503,7 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                       className="cursor-pointer p-2 rounded-xl bg-black/40 hover:bg-slate-800 flex items-center justify-between text-xs transition-colors"
                     >
                       <div className="flex items-center gap-2">
-                        <Wifi className="w-3.5 h-3.5 text-cyan-400" />
+                        <Wifi className="w-3.5 h-3.5 text-[#00c5e0]" />
                         <span className="font-mono text-white">{ap.ssid}</span>
                       </div>
                       <span className="text-[10px] font-mono text-slate-400">{ap.rssi} dBm</span>
@@ -658,68 +512,38 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                 </div>
               )}
 
-              <form onSubmit={handleSaveWiFi} className="space-y-3.5 bg-slate-900/60 p-4 rounded-2xl border border-slate-800">
+              <form onSubmit={handleSaveWiFi} className="space-y-3 bg-[#050f24] p-4 rounded-2xl border border-slate-800">
                 <div>
-                  <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                    Network Name (SSID)
-                  </label>
+                  <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">SSID</label>
                   <input
                     type="text"
                     required
                     value={wifiSsid}
                     onChange={(e) => setWifiSsid(e.target.value)}
-                    placeholder="Enter 2.4GHz SSID"
-                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+                    placeholder="2.4GHz Network Name"
+                    className="w-full px-3 py-2 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00c5e0]"
                   />
                 </div>
-
                 <div>
-                  <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">
-                    Wi-Fi Password
-                  </label>
+                  <label className="text-[11px] font-mono uppercase text-slate-400 block mb-1">Password</label>
                   <input
                     type="password"
                     value={wifiPassword}
                     onChange={(e) => setWifiPassword(e.target.value)}
                     placeholder="WPA2/WPA3 Password"
-                    className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
+                    className="w-full px-3 py-2 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-[#00c5e0]"
                   />
                 </div>
-
-                <div className="pt-1">
-                  <label className="flex items-center gap-2 cursor-pointer text-xs text-slate-300">
-                    <input
-                      type="checkbox"
-                      checked={useStatic}
-                      onChange={(e) => setUseStatic(e.target.checked)}
-                      className="rounded bg-black border-slate-700 text-cyan-500 focus:ring-0"
-                    />
-                    <span>Use Static IP Address</span>
-                  </label>
-                </div>
-
-                {useStatic && (
-                  <div>
-                    <input
-                      type="text"
-                      placeholder="192.168.1.120"
-                      value={staticIp}
-                      onChange={(e) => setStaticIp(e.target.value)}
-                      className="w-full px-3.5 py-2.5 text-xs font-mono bg-black/60 border border-slate-800 rounded-xl text-white focus:outline-none focus:border-cyan-500"
-                    />
-                  </div>
-                )}
-
                 <button
                   type="submit"
-                  className="w-full py-3 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl transition-all shadow-lg shadow-cyan-950/50"
+                  className="w-full py-2.5 text-xs font-semibold bg-[#00c5e0] hover:bg-[#22d8f0] text-black rounded-xl transition-all font-bold"
                 >
-                  Save Wi-Fi &amp; Connect
+                  Save &amp; Connect
                 </button>
               </form>
 
               {wifiSaved && (
-                <div className="p-3 bg-emerald-950/60 border border-emerald-800 rounded-2xl text-xs text-emerald-400 font-mono text-center flex items-center justify-center gap-2">
+                <div className="p-3 bg-emerald-950/60 border border-emerald-800 rounded-xl text-xs text-emerald-400 font-mono text-center flex items-center justify-center gap-1.5">
                   <CheckCircle className="w-4 h-4" />
                   <span>Wi-Fi Saved! ESP32-S3 reconnecting...</span>
                 </div>
@@ -728,24 +552,24 @@ export const MobileApp: React.FC<MobileAppProps> = ({
           )}
 
           {/* ======================================================== */}
-          {/* SCREEN 5: OTA FIRMWARE UPDATER */}
+          {/* TAB 5: OTA UPDATE                                        */}
           {/* ======================================================== */}
           {activeTab === 'ota' && (
-            <div className="space-y-4">
+            <div className="space-y-4 pt-2">
               <div>
                 <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                  <ArrowUpCircle className="w-4 h-4 text-cyan-400" />
+                  <ArrowUpCircle className="w-4 h-4 text-[#00c5e0]" />
                   <span>Wireless OTA Update</span>
                 </h3>
                 <p className="text-xs text-slate-400 mt-1">
-                  Flash compiled <strong className="text-white">firmware.bin</strong> wirelessly without USB cables.
+                  Upload compiled <strong className="text-white">firmware.bin</strong> over Wi-Fi without cables.
                 </p>
               </div>
 
-              <div className="border border-dashed border-slate-800 rounded-2xl p-6 text-center bg-slate-900/60">
+              <div className="border border-dashed border-slate-800 rounded-2xl p-6 text-center bg-[#050f24]">
                 <input
                   type="file"
-                  id="mobile-ota-input"
+                  id="ota-input"
                   accept=".bin"
                   onChange={(e) => {
                     if (e.target.files && e.target.files[0]) {
@@ -755,96 +579,76 @@ export const MobileApp: React.FC<MobileAppProps> = ({
                   }}
                   className="hidden"
                 />
-                <label htmlFor="mobile-ota-input" className="cursor-pointer flex flex-col items-center">
-                  <ArrowUpCircle className="w-9 h-9 text-cyan-400 mb-2" />
+                <label htmlFor="ota-input" className="cursor-pointer flex flex-col items-center">
+                  <ArrowUpCircle className="w-8 h-8 text-[#00c5e0] mb-2" />
                   <span className="text-xs font-semibold text-white">
                     {otaFile ? otaFile.name : 'Select firmware.bin'}
                   </span>
                   <span className="text-[11px] text-slate-500 mt-0.5">
-                    {otaFile ? `${(otaFile.size / 1024).toFixed(0)} KB` : 'Touch to browse firmware file'}
+                    {otaFile ? `${(otaFile.size / 1024).toFixed(0)} KB` : 'Touch to choose file'}
                   </span>
                 </label>
               </div>
 
               {(isFlashing || flashSuccess) && (
-                <div className="space-y-1.5 bg-slate-900 p-3.5 rounded-2xl border border-slate-800">
+                <div className="space-y-1.5 bg-[#050f24] p-3 rounded-xl border border-slate-800">
                   <div className="flex justify-between text-xs font-mono text-slate-400">
                     <span>{flashSuccess ? 'Flash Completed!' : 'Writing to OTA partition...'}</span>
                     <span>{otaProgress}%</span>
                   </div>
                   <div className="h-2 w-full bg-black rounded-full overflow-hidden">
                     <div
-                      className={`h-full transition-all duration-150 ${flashSuccess ? 'bg-emerald-400' : 'bg-cyan-400'}`}
+                      className={`h-full transition-all duration-150 ${flashSuccess ? 'bg-emerald-400' : 'bg-[#00c5e0]'}`}
                       style={{ width: `${otaProgress}%` }}
                     />
                   </div>
-                  {flashSuccess && (
-                    <div className="text-[11px] text-emerald-400 font-mono pt-1 text-center">
-                      Rebooting into fresh firmware...
-                    </div>
-                  )}
                 </div>
               )}
 
               <button
                 onClick={handleStartOta}
                 disabled={!otaFile || isFlashing}
-                className="w-full py-3 text-xs font-semibold bg-cyan-600 hover:bg-cyan-500 text-white rounded-xl transition-all disabled:opacity-40 shadow-lg shadow-cyan-950/50"
+                className="w-full py-2.5 text-xs font-semibold bg-[#00c5e0] hover:bg-[#22d8f0] text-black font-bold rounded-xl transition-all disabled:opacity-40"
               >
-                {isFlashing ? 'Flashing firmware...' : 'Start OTA Flash'}
+                {isFlashing ? 'Flashing...' : 'Start OTA Flash'}
               </button>
             </div>
           )}
 
           {/* ======================================================== */}
-          {/* SCREEN 6: LIVE HARDWARE STATUS & DIAGNOSTICS */}
+          {/* TAB 6: STATUS & TELEMETRY                                */}
           {/* ======================================================== */}
           {activeTab === 'status' && (
-            <div className="space-y-3">
+            <div className="space-y-3 pt-2">
               <h3 className="text-sm font-bold text-white flex items-center gap-1.5">
-                <Activity className="w-4 h-4 text-cyan-400" />
-                <span>Live ESP32-S3 Diagnostics</span>
+                <Activity className="w-4 h-4 text-[#00c5e0]" />
+                <span>Live Hardware Telemetry</span>
               </h3>
 
               <div className="grid grid-cols-2 gap-2 text-xs font-mono">
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
                   <div className="text-slate-500 text-[10px]">PSRAM OCTAL</div>
                   <div className="text-white font-bold text-sm">8 MB (~7.8 MB Free)</div>
                 </div>
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
                   <div className="text-slate-500 text-[10px]">INTERNAL HEAP</div>
                   <div className="text-white font-bold text-sm">~290 KB Free</div>
                 </div>
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
                   <div className="text-slate-500 text-[10px]">DAC DRIVER</div>
-                  <div className="text-cyan-400 font-bold text-sm">UDA1334A I2S</div>
+                  <div className="text-[#00c5e0] font-bold text-sm">UDA1334A I2S</div>
                 </div>
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
-                  <div className="text-slate-500 text-[10px]">AUDIO STREAM</div>
-                  <div className="text-white font-bold text-sm">44.1 kHz 16-bit</div>
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
+                  <div className="text-slate-500 text-[10px]">AUDIO FORMAT</div>
+                  <div className="text-white font-bold text-sm">44.1k 16-bit</div>
                 </div>
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
                   <div className="text-slate-500 text-[10px]">CORE 0 (RECEIVER)</div>
-                  <div className="text-white font-bold text-sm">TCP/UDP 9090 &bull; 9091</div>
+                  <div className="text-white font-bold text-sm">UDP 9090 &bull; 9091</div>
                 </div>
-                <div className="bg-slate-900/80 p-3 rounded-2xl border border-slate-800">
+                <div className="bg-[#050f24] p-3 rounded-2xl border border-slate-800">
                   <div className="text-slate-500 text-[10px]">CORE 1 (I2S DMA)</div>
                   <div className="text-white font-bold text-sm">Real-Time DMA</div>
-                </div>
-              </div>
-
-              <div className="p-3.5 bg-slate-900/80 rounded-2xl border border-slate-800 text-[11px] text-slate-400 space-y-1.5 font-mono">
-                <div className="flex justify-between">
-                  <span>mDNS Hostname:</span>
-                  <span className="text-cyan-300">wifimusic.local</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>I2S Pins:</span>
-                  <span className="text-slate-200">BCK=5, WS=6, DOUT=4, MUTE=7</span>
-                </div>
-                <div className="flex justify-between">
-                  <span>Active Partition:</span>
-                  <span className="text-emerald-400">ota_0 (Dual OTA enabled)</span>
                 </div>
               </div>
             </div>
@@ -852,78 +656,86 @@ export const MobileApp: React.FC<MobileAppProps> = ({
 
         </main>
 
-        {/* Mobile App Bottom Navigation Bar */}
-        <nav className="sticky bottom-0 z-30 pt-2 pb-3 px-2 bg-slate-950/95 backdrop-blur-md border-t border-slate-800/80 grid grid-cols-6 gap-0.5">
+        {/* Bottom Navigation Bar (EXACT MATCH TO SCREENSHOT) */}
+        <nav className="px-3 py-3 bg-[#020712] border-t border-slate-800/80 grid grid-cols-6 gap-1 z-30">
+          {/* Player Tab */}
           <button
             onClick={() => setActiveTab('player')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
               activeTab === 'player'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Disc3 className={`w-4 h-4 ${isPlaying ? 'animate-spin text-cyan-400' : ''}`} />
-            <span>Player</span>
+            <div className="relative">
+              <Disc3 className="w-5 h-5" />
+            </div>
+            <span className="text-[11px] font-medium">Player</span>
           </button>
 
+          {/* Hook Tab */}
           <button
-            onClick={() => setActiveTab('connect')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'connect'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+            onClick={() => setActiveTab('hook')}
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
+              activeTab === 'hook'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Server className="w-4 h-4" />
-            <span>Hook</span>
+            <Server className="w-5 h-5" />
+            <span className="text-[11px] font-medium">Hook</span>
           </button>
 
+          {/* Tone Tab */}
           <button
-            onClick={() => setActiveTab('eq')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
-              activeTab === 'eq'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+            onClick={() => setActiveTab('tone')}
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
+              activeTab === 'tone'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <SlidersHorizontal className="w-4 h-4" />
-            <span>Tone</span>
+            <SlidersHorizontal className="w-5 h-5" />
+            <span className="text-[11px] font-medium">Tone</span>
           </button>
 
+          {/* Wi-Fi Tab */}
           <button
             onClick={() => setActiveTab('wifi')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
               activeTab === 'wifi'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Wifi className="w-4 h-4" />
-            <span>Wi-Fi</span>
+            <Wifi className="w-5 h-5" />
+            <span className="text-[11px] font-medium">Wi-Fi</span>
           </button>
 
+          {/* OTA Tab */}
           <button
             onClick={() => setActiveTab('ota')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
               activeTab === 'ota'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <ArrowUpCircle className="w-4 h-4" />
-            <span>OTA</span>
+            <ArrowUpCircle className="w-5 h-5" />
+            <span className="text-[11px] font-medium">OTA</span>
           </button>
 
+          {/* Status Tab */}
           <button
             onClick={() => setActiveTab('status')}
-            className={`py-1.5 rounded-xl text-[9px] font-medium flex flex-col items-center gap-1 transition-all ${
+            className={`py-2 px-1 rounded-2xl flex flex-col items-center justify-center gap-1 transition-all ${
               activeTab === 'status'
-                ? 'text-cyan-400 font-bold bg-cyan-950/40'
+                ? 'bg-[#042136] text-[#00c5e0] font-bold'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Activity className="w-4 h-4" />
-            <span>Status</span>
+            <Activity className="w-5 h-5" />
+            <span className="text-[11px] font-medium">Status</span>
           </button>
         </nav>
 

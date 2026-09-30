@@ -20,14 +20,14 @@ export const FIRMWARE_FILES: FirmwareFile[] = [
  * ============================================================================
  * Embedded Native Mobile Web App:
  * - Fluid responsive mobile web app (no fake plastic bezels or fake notches)
- * - Fixed top status bar with live streaming indicators & power toggle
+ * - Fixed top status bar: "ESP32-S3 / AudioLink" + Live Device IP badge
  * - Fixed bottom navigation bar with 6 screens:
- *   1. Player (Album art, buffer fill meter, live waveform visualizer, master volume, transport)
- *   2. Phone Hook (Connect to Android's port 9090 audio server via UDP registration beacon)
- *   3. Tone & EQ (Bass, Treble, Balance, Presets)
- *   4. Wi-Fi Manager (Live network scanner, SSID/Password, Static IP, AP mode)
- *   5. OTA Updater (Wireless firmware binary flasher with real-time AJAX progress bar)
- *   6. Diagnostics (PSRAM 8MB telemetry, Core 0 & Core 1, I2S DAC pinout, packet counter)
+ *   1. Player (Track & Artist, Hardware Volume card, Stop, Large Cyan Pause/Play, EQ, Android Hook card)
+ *   2. Hook (Connect to Android's port 9090 audio server via UDP registration beacon)
+ *   3. Tone (Hardware Tone & Equalizer: Bass, Treble, Balance, Presets)
+ *   4. Wi-Fi (Live network scanner, SSID/Password, Static IP, AP mode)
+ *   5. OTA (Wireless firmware binary flasher with real-time AJAX progress bar)
+ *   6. Status (PSRAM 8MB telemetry, Core 0 & Core 1, I2S DAC pinout, packet counter)
  * - Complete FreeRTOS dual-core engine: Core 0 (UDP 9090/9091) + Core 1 (I2S DMA)
  * ============================================================================
  */
@@ -165,7 +165,7 @@ struct ReceiverState {
   bool powerOn = true;
   bool isPlaying = true;
   bool isMuted = false;
-  uint8_t volume = 85;
+  uint8_t volume = 82;
   int8_t bassGain = 0;
   int8_t trebleGain = 0;
   int8_t balance = 0;
@@ -177,7 +177,7 @@ struct ReceiverState {
   bool phoneConnected = false;
   String phoneServerIp = "";
   uint32_t lastPingTime = 0;
-  String connectionStatus = "Listening on UDP 9090 & 9091";
+  String connectionStatus = "Ready. UDP 9090 & 9091";
 } state;
 
 // ----------------------------------------------------------------------------
@@ -218,7 +218,7 @@ void setupI2S() {
 }
 
 // ----------------------------------------------------------------------------
-// EMBEDDED NATIVE MOBILE APP INTERFACE (SERVED FROM ESP32 FLASH)
+// EMBEDDED MOBILE WEB APP HTML (EXACT PIXEL-FOR-PIXEL MATCH TO SCREENSHOT)
 // ----------------------------------------------------------------------------
 const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <!DOCTYPE html>
@@ -226,78 +226,75 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#030712">
+  <meta name="theme-color" content="#020712">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <title>AudioLink ESP32-S3</title>
+  <title>ESP32-S3 AudioLink</title>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; -webkit-tap-highlight-color: transparent; }
-    body { background: #030712; color: #f8fafc; min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
+    body { background: #020712; color: #f8fafc; min-height: 100vh; min-height: 100dvh; display: flex; justify-content: center; }
     
-    .app { width: 100%; max-width: 440px; min-height: 100vh; min-height: 100dvh; background: #090d16; display: flex; flex-direction: column; position: relative; border-left: 1px solid rgba(255,255,255,0.06); border-right: 1px solid rgba(255,255,255,0.06); box-shadow: 0 0 50px rgba(0,0,0,0.8); }
+    .app { width: 100%; max-width: 420px; min-height: 100vh; min-height: 100dvh; background: #020712; display: flex; flex-direction: column; justify-content: space-between; border-left: 1px solid rgba(255,255,255,0.06); border-right: 1px solid rgba(255,255,255,0.06); box-shadow: 0 0 50px rgba(0,0,0,0.85); position: relative; }
 
-    /* Pinned Top Bar */
-    .top-bar { position: sticky; top: 0; z-index: 40; padding: env(safe-area-inset-top, 12px) 16px 12px; background: rgba(9, 13, 22, 0.92); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); border-bottom: 1px solid rgba(255,255,255,0.07); display: flex; justify-content: space-between; align-items: center; }
-    .brand { display: flex; align-items: center; gap: 8px; }
-    .pulse-dot { width: 9px; height: 9px; border-radius: 50%; background: #10b981; box-shadow: 0 0 10px #10b981; }
-    .brand-title { font-size: 13px; font-weight: 700; letter-spacing: -0.2px; font-family: monospace; color: #fff; }
-    .top-actions { display: flex; align-items: center; gap: 8px; }
-    .ip-tag { font-size: 10px; font-family: monospace; color: #06b6d4; background: rgba(6,182,212,0.12); border: 1px solid rgba(6,182,212,0.3); padding: 3px 8px; border-radius: 12px; }
-    .btn-power { width: 30px; height: 30px; border-radius: 50%; background: rgba(16,185,129,0.15); border: 1px solid rgba(16,185,129,0.3); color: #10b981; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.2s; }
-    .btn-power.off { background: #1e293b; border-color: #334155; color: #64748b; }
+    /* Top Bar matching screenshot */
+    .top-bar { padding: 24px 24px 16px; display: flex; justify-content: space-between; align-items: center; }
+    .brand-col { display: flex; flex-direction: column; }
+    .brand-title { font-size: 20px; font-weight: 800; color: #fff; line-height: 1.15; letter-spacing: -0.4px; }
+    
+    .status-pill { display: flex; align-items: center; gap: 8px; padding: 6px 14px; border-radius: 8px; border: 1px solid rgba(6,182,212,0.4); background: rgba(6,182,212,0.08); color: #22d3ee; font-family: monospace; font-size: 12px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: #00c5e0; box-shadow: 0 0 8px #00c5e0; }
 
-    /* Content Area */
-    .main-content { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; padding: 16px 16px 84px; display: flex; flex-direction: column; }
-    .screen { display: none; flex-direction: column; gap: 14px; }
+    /* Main Container */
+    .main-content { flex: 1; padding: 8px 20px 20px; display: flex; flex-direction: column; justify-content: flex-start; }
+    .screen { display: none; flex-direction: column; gap: 22px; }
     .screen.active { display: flex; }
 
-    /* Artwork & Visualizer */
-    .art-card { position: relative; width: 100%; aspect-ratio: 1; border-radius: 24px; overflow: hidden; background: linear-gradient(180deg, #1e293b, #090d16); border: 1px solid rgba(255,255,255,0.08); box-shadow: 0 12px 30px rgba(0,0,0,0.6); display: flex; align-items: center; justify-content: center; }
-    .art-img { width: 100%; height: 100%; object-fit: cover; }
-    .badge { position: absolute; font-size: 10px; font-weight: 600; padding: 4px 10px; border-radius: 20px; backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px); background: rgba(0,0,0,0.7); border: 1px solid rgba(255,255,255,0.12); color: #fff; }
-    .badge.top-left { top: 12px; left: 12px; }
-    .badge.top-right { top: 12px; right: 12px; color: #06b6d4; font-family: monospace; border-color: rgba(6,182,212,0.3); }
-    .badge.bottom-left { bottom: 12px; left: 12px; font-family: monospace; color: #cbd5e1; }
+    /* Track Meta matching screenshot */
+    .track-meta { text-align: center; margin-top: 4px; }
+    .track-title { font-size: 22px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
+    .track-artist { font-size: 13px; font-weight: 500; color: #94a3b8; margin-top: 3px; }
 
-    /* Waveform Banner */
-    .waveform-card { background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 16px; padding: 8px 12px; }
-    .waveform-head { display: flex; justify-content: space-between; font-size: 10px; font-family: monospace; color: #94a3b8; margin-bottom: 4px; }
-    canvas { width: 100%; height: 38px; border-radius: 8px; background: rgba(0,0,0,0.4); display: block; }
+    /* Hardware Volume Card */
+    .vol-card { background: #050f24; border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 16px 18px; }
+    .vol-row { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 700; font-family: monospace; margin-bottom: 12px; }
+    .vol-label { display: flex; align-items: center; gap: 8px; color: #cbd5e1; letter-spacing: 0.5px; }
+    .vol-pct { color: #00c5e0; font-size: 13px; font-weight: bold; }
+    input[type=range] { width: 100%; height: 6px; border-radius: 3px; accent-color: #00c5e0; background: #142342; cursor: pointer; }
 
-    /* Track Meta */
-    .track-info { text-align: center; margin: 4px 0; }
-    .track-title { font-size: 17px; font-weight: 700; color: #fff; letter-spacing: -0.3px; }
-    .track-sub { font-size: 12px; font-family: monospace; color: #94a3b8; margin-top: 2px; }
-
-    /* Volume Card */
-    .vol-card { background: rgba(15,23,42,0.8); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 14px 16px; }
-    .vol-row { display: flex; justify-content: space-between; font-size: 11px; font-weight: 700; font-family: monospace; margin-bottom: 8px; }
-    input[type=range] { width: 100%; height: 6px; border-radius: 3px; accent-color: #06b6d4; background: #1e293b; cursor: pointer; }
-
-    /* Transport Controls */
-    .transport-bar { display: flex; justify-content: center; align-items: center; gap: 20px; padding: 4px 0 8px; }
-    .btn-circle { width: 44px; height: 44px; border-radius: 50%; background: #0f172a; border: 1px solid rgba(255,255,255,0.1); color: #cbd5e1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
+    /* Transport Controls: Stop, Large Cyan Pause/Play, Tone */
+    .transport-row { display: flex; justify-content: center; align-items: center; gap: 24px; padding: 6px 0; }
+    .btn-circle { width: 56px; height: 56px; border-radius: 50%; background: #0c1833; border: 1px solid rgba(255,255,255,0.08); color: #cbd5e1; display: flex; align-items: center; justify-content: center; cursor: pointer; transition: all 0.15s; }
     .btn-circle:active { transform: scale(0.92); }
-    .btn-circle.play { width: 60px; height: 60px; background: #06b6d4; color: #020617; border: none; box-shadow: 0 0 20px rgba(6,182,212,0.4); }
-    .btn-circle.play:active { transform: scale(0.94); background: #22d3ee; }
+    .square-icon { width: 15px; height: 15px; background: #cbd5e1; border-radius: 2px; }
+    
+    .btn-circle.play { width: 72px; height: 72px; background: #00c5e0; color: #000; border: none; box-shadow: 0 0 30px rgba(0,197,224,0.45); }
+    .btn-circle.play:active { transform: scale(0.94); background: #22d8f0; }
 
-    /* General Cards */
-    .card { background: rgba(15,23,42,0.7); border: 1px solid rgba(255,255,255,0.08); border-radius: 20px; padding: 16px; }
+    /* Android Audio Server Hook Card */
+    .hook-card { cursor: pointer; background: #031528; border: 1px solid rgba(6,182,212,0.4); border-radius: 18px; padding: 16px 18px; display: flex; justify-content: space-between; align-items: center; transition: all 0.15s; }
+    .hook-card:active { transform: scale(0.98); }
+    .hook-left { display: flex; align-items: center; gap: 12px; }
+    .hook-icon-wrap { color: #00c5e0; display: flex; align-items: center; justify-content: center; }
+    .hook-title { font-size: 14px; font-weight: 700; color: #fff; }
+    .hook-sub { font-size: 11px; font-family: monospace; color: #00c5e0; margin-top: 2px; }
+    .hook-open { font-size: 12px; font-weight: 600; color: #00c5e0; font-family: monospace; }
+
+    /* Other Tab Cards */
+    .card { background: #050f24; border: 1px solid rgba(255,255,255,0.08); border-radius: 18px; padding: 16px; }
     .card-title { font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
     .card-desc { font-size: 11px; color: #94a3b8; line-height: 1.5; margin-bottom: 12px; }
     .form-group { margin-bottom: 12px; }
     label { font-size: 10px; font-weight: 700; text-transform: uppercase; font-family: monospace; color: #94a3b8; margin-bottom: 4px; display: block; }
     input[type=text], input[type=password], input[type=number] { width: 100%; padding: 12px 14px; background: rgba(0,0,0,0.5); border: 1px solid rgba(255,255,255,0.1); border-radius: 14px; color: #fff; font-size: 13px; font-family: monospace; }
-    input:focus { outline: none; border-color: #06b6d4; }
+    input:focus { outline: none; border-color: #00c5e0; }
     
-    .btn-submit { width: 100%; padding: 13px; border-radius: 14px; background: #059669; color: #fff; border: 0; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; box-shadow: 0 4px 14px rgba(5,150,105,0.3); }
-    .btn-submit:active { transform: scale(0.98); }
-    .btn-submit.blue { background: #0284c7; box-shadow: 0 4px 14px rgba(2,132,199,0.3); }
+    .btn-action { width: 100%; padding: 13px; border-radius: 14px; background: #00c5e0; color: #000; border: 0; font-size: 13px; font-weight: 700; cursor: pointer; transition: all 0.2s; }
+    .btn-action:active { transform: scale(0.98); }
 
     /* Presets Grid */
     .preset-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-bottom: 12px; }
     .btn-preset { padding: 8px 4px; border-radius: 12px; background: rgba(0,0,0,0.4); border: 1px solid rgba(255,255,255,0.08); color: #cbd5e1; font-size: 11px; font-family: monospace; font-weight: 600; cursor: pointer; }
-    .btn-preset.active { background: #0891b2; color: #fff; border-color: #06b6d4; }
+    .btn-preset.active { background: #00c5e0; color: #000; border-color: #00c5e0; font-weight: bold; }
 
     /* Telemetry Grid */
     .stat-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
@@ -305,114 +302,106 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     .stat-label { font-size: 9px; font-family: monospace; color: #64748b; text-transform: uppercase; }
     .stat-value { font-size: 13px; font-weight: 700; color: #fff; font-family: monospace; margin-top: 2px; }
 
-    /* Pinned Bottom Nav */
-    .bottom-nav { position: fixed; bottom: 0; left: 50%; transform: translateX(-50%); width: 100%; max-width: 440px; z-index: 50; padding: 6px 4px calc(env(safe-area-inset-bottom, 12px) + 4px); background: rgba(9, 13, 22, 0.94); backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px); border-top: 1px solid rgba(255,255,255,0.08); display: grid; grid-template-columns: repeat(6, 1fr); }
-    .nav-btn { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: transparent; border: 0; color: #64748b; padding: 6px 0; border-radius: 10px; cursor: pointer; transition: all 0.15s; font-size: 9px; font-weight: 600; }
-    .nav-btn.active { color: #06b6d4; font-weight: 700; background: rgba(6,182,212,0.1); }
-    .nav-btn svg { width: 18px; height: 18px; stroke-width: 2.2; }
+    /* Bottom Navigation Bar matching screenshot */
+    .nav-bar { background: #020712; border-top: 1px solid rgba(255,255,255,0.08); padding: 10px 8px 16px; display: grid; grid-template-columns: repeat(6, 1fr); gap: 4px; }
+    .nav-item { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; background: transparent; border: 0; color: #64748b; padding: 8px 2px; border-radius: 14px; cursor: pointer; transition: all 0.15s; font-size: 11px; font-weight: 500; }
+    .nav-item.active { background: #042136; color: #00c5e0; font-weight: 700; }
+    .nav-item svg { width: 20px; height: 20px; stroke-width: 2.2; }
 
-    /* Toast Notification */
-    .toast { position: fixed; top: 70px; left: 50%; transform: translateX(-50%); z-index: 100; background: #064e3b; border: 1px solid #10b981; color: #a7f3d0; padding: 10px 18px; border-radius: 30px; font-size: 11px; font-family: monospace; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.8); display: none; align-items: center; gap: 8px; animation: fadeIn 0.2s ease-out; }
-    @keyframes fadeIn { from { opacity: 0; transform: translate(-50%, -10px); } to { opacity: 1; transform: translate(-50%, 0); } }
-
-    /* Progress bar */
+    /* Toast */
+    .toast { position: fixed; top: 80px; left: 50%; transform: translateX(-50%); z-index: 100; background: #031e33; border: 1px solid #00c5e0; color: #22d3ee; padding: 10px 18px; border-radius: 30px; font-size: 11px; font-family: monospace; font-weight: 600; box-shadow: 0 10px 25px rgba(0,0,0,0.8); display: none; align-items: center; gap: 8px; }
     .progress-box { margin-top: 12px; background: rgba(0,0,0,0.5); border-radius: 8px; overflow: hidden; height: 8px; border: 1px solid rgba(255,255,255,0.1); }
-    .progress-fill { height: 100%; background: #06b6d4; width: 0%; transition: width 0.1s; }
+    .progress-fill { height: 100%; background: #00c5e0; width: 0%; transition: width 0.1s; }
   </style>
 </head>
 <body>
 
   <div class="app">
-    <!-- Pinned Top Header -->
+    <!-- Top Header: EXACT MATCH TO SCREENSHOT -->
     <header class="top-bar">
-      <div class="brand">
-        <span class="pulse-dot" id="liveDot"></span>
-        <div>
-          <div class="brand-title" id="headerTitle">ESP32-S3 RECEIVER</div>
-        </div>
+      <div class="brand-col">
+        <div class="brand-title">ESP32-S3</div>
+        <div class="brand-title">AudioLink</div>
       </div>
-      <div class="top-actions">
-        <span class="ip-tag" id="ipBadge">192.168.254.109</span>
-        <button class="btn-power" id="powerBtn" onclick="togglePower()" title="Power On / Standby">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18.36 6.64a9 9 0 1 1-12.73 0"></path><line x1="12" y1="2" x2="12" y2="12"></line></svg>
-        </button>
+      <div class="status-pill">
+        <span class="status-dot"></span>
+        <span id="ipBadge">Device: 192.168.254.109</span>
       </div>
     </header>
 
-    <!-- Floating Toast -->
+    <!-- Floating Toast Notification -->
     <div class="toast" id="appToast">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg>
       <span id="toastMsg">Connected successfully!</span>
     </div>
 
-    <!-- Main Content Screens -->
+    <!-- Main Screens -->
     <main class="main-content">
       
-      <!-- ================= 1. NOW PLAYING ================= -->
+      <!-- ================= SCREEN 1: PLAYER (EXACT MATCH TO SCREENSHOT) ================= -->
       <section class="screen active" id="tab-player">
-        <div class="art-card">
-          <img src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=600&auto=format&fit=crop&q=80" alt="Audio Stream Art" class="art-img">
-          <div class="badge top-left">WiFiAudioStreaming v1.2</div>
-          <div class="badge top-right" id="bufTag">PSRAM: 0%</div>
-          <div class="badge bottom-left">UDA1334A &bull; 16-bit 44.1kHz</div>
+        <!-- Track & Artist -->
+        <div class="track-meta">
+          <h1 class="track-title" id="trackName">Midnight City</h1>
+          <p class="track-artist" id="trackSub">M83</p>
         </div>
 
-        <div class="waveform-card">
-          <div class="waveform-head">
-            <span>I2S DMA AUDIO STREAM</span>
-            <span id="waveStatus" style="color:#10b981;">● 44,100 Hz</span>
-          </div>
-          <canvas id="waveCanvas" width="360" height="38"></canvas>
-        </div>
-
-        <div class="track-info">
-          <div class="track-title" id="trackName">WiFi Audio Stream</div>
-          <div class="track-sub" id="trackSub">UDP 9090 / 9091 Ready</div>
-        </div>
-
+        <!-- Hardware Volume Card -->
         <div class="vol-card">
           <div class="vol-row">
-            <span style="color:#94a3b8;">HARDWARE VOLUME</span>
-            <span id="volVal" style="color:#06b6d4;">85%</span>
+            <div class="vol-label">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path><path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path></svg>
+              <span>HARDWARE VOLUME</span>
+            </div>
+            <span class="vol-pct" id="volVal">82%</span>
           </div>
-          <input type="range" id="volSlider" min="0" max="100" value="85" oninput="setVol(this.value)">
+          <input type="range" id="volSlider" min="0" max="100" value="82" oninput="setVol(this.value)">
         </div>
 
-        <div class="transport-bar">
-          <button class="btn-circle" onclick="cmd('mute')" title="Toggle Mute" id="muteBtn">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path></svg>
+        <!-- Transport Buttons: Stop, Large Cyan Pause/Play, Tone -->
+        <div class="transport-row">
+          <!-- Stop Button -->
+          <button class="btn-circle" onclick="cmd('flush')" title="Stop & Flush Buffer">
+            <div class="square-icon"></div>
           </button>
           
+          <!-- Big Glowing Cyan Play/Pause Button -->
           <button class="btn-circle play" onclick="togglePlay()" id="playBtn" title="Play/Pause">
-            <svg id="playIcon" width="24" height="24" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+            <div id="playIconContainer" style="display:flex; gap:5px;">
+              <div style="width:7px; height:24px; background:#000; border-radius:2px;"></div>
+              <div style="width:7px; height:24px; background:#000; border-radius:2px;"></div>
+            </div>
           </button>
 
-          <button class="btn-circle" onclick="cmd('flush')" title="Flush Buffer">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect></svg>
+          <!-- Tone Shortcut Button -->
+          <button class="btn-circle" onclick="switchTab('tone')" title="Equalizer & Tone">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line></svg>
           </button>
         </div>
 
-        <!-- Quick Connect Card -->
-        <div class="card" onclick="switchTab('connect')" style="cursor:pointer; background:rgba(6,182,212,0.08); border-color:rgba(6,182,212,0.3);">
-          <div class="card-title" style="color:#22d3ee; font-size:12px;">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
-            <span>Phone Says "Waiting for client on port 9090"?</span>
+        <!-- Android Audio Server Hook Card -->
+        <div class="hook-card" onclick="switchTab('hook')">
+          <div class="hook-left">
+            <div class="hook-icon-wrap">
+              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+            </div>
+            <div>
+              <div class="hook-title">Android Audio Server Hook</div>
+              <div class="hook-sub">Port 9090 &bull; Fast Registration</div>
+            </div>
           </div>
-          <div class="card-desc" style="margin-bottom:0; color:#cbd5e1;">
-            Tap here to open Phone Audio Hookup and trigger immediate streaming &rarr;
-          </div>
+          <div class="hook-open">Open &rarr;</div>
         </div>
       </section>
 
-      <!-- ================= 2. PHONE HOOK ================= -->
-      <section class="screen" id="tab-connect">
+      <!-- ================= SCREEN 2: HOOK (PORT 9090) ================= -->
+      <section class="screen" id="tab-hook">
         <div class="card">
           <div class="card-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
             <span>Android Phone Audio Hookup</span>
           </div>
           <div class="card-desc">
-            Marco Morosi&apos;s app uses UDP audio. When your phone screen says <b style="color:#fde047;">"Waiting for client on port 9090"</b>, enter its IP address below. The ESP32 will send the registration ping to trigger instant music playback!
+            When your phone says <b style="color:#fde047;">"Waiting for client on port 9090"</b>, enter its IP address below. The ESP32 will send the UDP registration beacon to trigger instant music playback!
           </div>
 
           <form onsubmit="connectPhone(event)">
@@ -424,26 +413,19 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
               <label>Target Port</label>
               <input type="number" id="phonePortInput" value="9090">
             </div>
-            <button type="submit" class="btn-submit">Link ESP32 to Phone Audio</button>
+            <button type="submit" class="btn-action">Link ESP32 to Phone Audio</button>
           </form>
-        </div>
-
-        <div class="card">
-          <div class="card-title" style="font-size:12px; color:#94a3b8;">DIRECT BROADCAST STREAMING</div>
-          <div class="card-desc" style="margin-bottom:0;">
-            If your transmitter pushes UDP packets, stream directly to IP: <code id="hostIp" style="color:#06b6d4; font-weight:bold;">192.168.254.109</code> on port <code style="color:#fde047;">9090</code> or <code style="color:#fde047;">9091</code>.
-          </div>
         </div>
       </section>
 
-      <!-- ================= 3. EQUALIZER ================= -->
-      <section class="screen" id="tab-eq">
+      <!-- ================= SCREEN 3: TONE (EQUALIZER) ================= -->
+      <section class="screen" id="tab-tone">
         <div class="card">
           <div class="card-title">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line><line x1="1" y1="14" x2="7" y2="14"></line><line x1="9" y1="8" x2="15" y2="8"></line><line x1="17" y1="16" x2="23" y2="16"></line></svg>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line></svg>
             <span>Hardware Tone &amp; Equalizer</span>
           </div>
-          <div class="card-desc">Fine-tune frequency curves and stereo balance directly before I2S DMA.</div>
+          <div class="card-desc">Fine-tune frequencies and balance directly before I2S DMA.</div>
 
           <div class="preset-grid">
             <button class="btn-preset active" onclick="setPreset('flat', this)">Flat</button>
@@ -455,7 +437,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="form-group">
             <div style="display:flex; justify-content:space-between; font-size:11px; font-family:monospace; margin-bottom:4px;">
               <span>BASS GAIN</span>
-              <span id="bassVal" style="color:#06b6d4;">0 dB</span>
+              <span id="bassVal" style="color:#00c5e0;">0 dB</span>
             </div>
             <input type="range" id="bassSlider" min="-10" max="10" value="0" oninput="updateEq()">
           </div>
@@ -463,7 +445,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="form-group">
             <div style="display:flex; justify-content:space-between; font-size:11px; font-family:monospace; margin-bottom:4px;">
               <span>TREBLE GAIN</span>
-              <span id="trebleVal" style="color:#06b6d4;">0 dB</span>
+              <span id="trebleVal" style="color:#00c5e0;">0 dB</span>
             </div>
             <input type="range" id="trebleSlider" min="-10" max="10" value="0" oninput="updateEq()">
           </div>
@@ -471,79 +453,72 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           <div class="form-group" style="margin-bottom:0;">
             <div style="display:flex; justify-content:space-between; font-size:11px; font-family:monospace; margin-bottom:4px;">
               <span>STEREO BALANCE</span>
-              <span id="balVal" style="color:#06b6d4;">Center</span>
+              <span id="balVal" style="color:#00c5e0;">Center</span>
             </div>
             <input type="range" id="balSlider" min="-50" max="50" value="0" oninput="updateEq()">
           </div>
         </div>
       </section>
 
-      <!-- ================= 4. WI-FI ================= -->
+      <!-- ================= SCREEN 4: WI-FI ================= -->
       <section class="screen" id="tab-wifi">
         <div class="card">
           <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:6px;">
             <div class="card-title" style="margin-bottom:0;">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
-              <span>Join Home Wi-Fi</span>
+              <span>Wi-Fi Network Setup</span>
             </div>
-            <button onclick="scanNetworks()" style="font-size:10px; font-family:monospace; background:#0f172a; border:1px solid #334155; color:#06b6d4; padding:4px 8px; border-radius:8px; cursor:pointer;">Scan APs</button>
+            <button onclick="scanNetworks()" style="font-size:10px; font-family:monospace; background:#0c1833; border:1px solid #1e293b; color:#00c5e0; padding:4px 8px; border-radius:8px; cursor:pointer;">Scan</button>
           </div>
-          <div class="card-desc">Connect ESP32-S3 to your 2.4GHz home router. Access at <b>http://wifimusic.local</b>.</div>
+          <div class="card-desc">Connect to your 2.4GHz home router. Access at <b>http://wifimusic.local</b>.</div>
 
           <div id="scanResults" style="display:none; margin-bottom:12px; max-height:120px; overflow-y:auto;"></div>
 
           <form onsubmit="saveWiFi(event)">
             <div class="form-group">
-              <label>Wi-Fi Network (SSID)</label>
-              <input type="text" id="ssidInput" placeholder="Network Name" required>
+              <label>SSID</label>
+              <input type="text" id="ssidInput" placeholder="2.4GHz Network Name" required>
             </div>
             <div class="form-group">
-              <label>Wi-Fi Password</label>
-              <input type="password" id="passInput" placeholder="Password">
+              <label>Password</label>
+              <input type="password" id="passInput" placeholder="Wi-Fi Password">
             </div>
-            <button type="submit" class="btn-submit blue">Save &amp; Connect</button>
+            <button type="submit" class="btn-action">Save &amp; Connect</button>
           </form>
-        </div>
-
-        <div class="card">
-          <div class="card-title" style="font-size:12px; color:#94a3b8;">DIRECT ACCESS POINT MODE</div>
-          <div class="card-desc" style="margin-bottom:0;">
-            If router is unreachable, ESP32 broadcasts fallback AP: <b>ESP32-Audio-Setup</b> (pass: <code>password1234</code>) at <b>192.168.4.1</b>.
-          </div>
         </div>
       </section>
 
-      <!-- ================= 5. OTA UPDATE ================= -->
+      <!-- ================= SCREEN 5: OTA UPDATE ================= -->
       <section class="screen" id="tab-ota">
         <div class="card">
           <div class="card-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
             <span>Wireless OTA Update</span>
           </div>
-          <div class="card-desc">Flash newly compiled <b>firmware.bin</b> over Wi-Fi without USB cables.</div>
+          <div class="card-desc">Flash newly compiled <b>firmware.bin</b> over Wi-Fi without cables.</div>
 
           <form onsubmit="uploadOta(event)">
             <div class="form-group">
               <label>Select Binary (.bin)</label>
               <input type="file" id="otaFileInput" accept=".bin" required style="padding:10px; font-size:11px; color:#cbd5e1;">
             </div>
-            <button type="submit" id="otaSubmitBtn" class="btn-submit">Upload &amp; Flash Firmware</button>
+            <button type="submit" id="otaSubmitBtn" class="btn-action">Upload &amp; Flash Firmware</button>
             <div class="progress-box" id="otaProgressBox" style="display:none;">
               <div class="progress-fill" id="otaProgressFill"></div>
             </div>
-            <div id="otaStatusText" style="font-size:11px; font-family:monospace; color:#06b6d4; text-align:center; margin-top:6px; display:none;">Writing to flash...</div>
+            <div id="otaStatusText" style="font-size:11px; font-family:monospace; color:#00c5e0; text-align:center; margin-top:6px; display:none;">Writing to flash...</div>
           </form>
         </div>
       </section>
 
-      <!-- ================= 6. STATUS & TELEMETRY ================= -->
+      <!-- ================= SCREEN 6: STATUS ================= -->
       <section class="screen" id="tab-status">
         <div class="card">
           <div class="card-title">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
-            <span>ESP32-S3 Hardware Diagnostics</span>
+            <span>Hardware Diagnostics</span>
           </div>
-          <div class="card-desc">Live dual-core system telemetry & stream counters.</div>
+          <div class="card-desc">Live ESP32-S3 telemetry & audio stream counters.</div>
 
           <div class="stat-grid">
             <div class="stat-cell">
@@ -556,68 +531,60 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             </div>
             <div class="stat-cell">
               <div class="stat-label">PACKETS RX</div>
-              <div class="stat-value" id="statRx" style="color:#06b6d4;">0</div>
+              <div class="stat-value" id="statRx" style="color:#00c5e0;">0</div>
             </div>
             <div class="stat-cell">
-              <div class="stat-label">PACKETS DROPPED</div>
-              <div class="stat-value" id="statDrop" style="color:#ef4444;">0</div>
-            </div>
-            <div class="stat-cell">
-              <div class="stat-label">I2S DAC CHIP</div>
+              <div class="stat-label">I2S DAC</div>
               <div class="stat-value">UDA1334A</div>
             </div>
             <div class="stat-cell">
-              <div class="stat-label">AUDIO FORMAT</div>
-              <div class="stat-value">44.1k Stereo</div>
+              <div class="stat-label">CORE 0</div>
+              <div class="stat-value">UDP 9090/9091</div>
             </div>
             <div class="stat-cell">
-              <div class="stat-label">CORE 0 TASK</div>
-              <div class="stat-value">UDP 9090 / 9091</div>
-            </div>
-            <div class="stat-cell">
-              <div class="stat-label">CORE 1 TASK</div>
+              <div class="stat-label">CORE 1</div>
               <div class="stat-value">I2S DMA Engine</div>
             </div>
-          </div>
-
-          <div style="margin-top:12px; padding:10px; background:rgba(0,0,0,0.4); border-radius:12px; font-size:11px; font-family:monospace; color:#94a3b8; display:flex; flex-direction:column; gap:4px;">
-            <div style="display:flex; justify-content:space-between;"><span>mDNS URL:</span><span style="color:#22d3ee;">http://wifimusic.local</span></div>
-            <div style="display:flex; justify-content:space-between;"><span>I2S Pins:</span><span>BCK=4, WS=5, DOUT=6, MUTE=7</span></div>
-            <div style="display:flex; justify-content:space-between;"><span>Stream Status:</span><span id="statStatusText" style="color:#10b981;">Ready</span></div>
           </div>
         </div>
       </section>
 
     </main>
 
-    <!-- Pinned Bottom Navigation Bar -->
-    <nav class="bottom-nav">
-      <button class="nav-btn active" onclick="switchTab('player', this)">
+    <!-- Bottom Navigation Bar: EXACT MATCH TO SCREENSHOT -->
+    <nav class="nav-bar">
+      <!-- Player Tab -->
+      <button class="nav-item active" onclick="switchTab('player', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="3"></circle></svg>
         <span>Player</span>
       </button>
 
-      <button class="nav-btn" onclick="switchTab('connect', this)">
+      <!-- Hook Tab -->
+      <button class="nav-item" onclick="switchTab('hook', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
         <span>Hook</span>
       </button>
 
-      <button class="nav-btn" onclick="switchTab('eq', this)">
+      <!-- Tone Tab -->
+      <button class="nav-item" onclick="switchTab('tone', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><line x1="4" y1="21" x2="4" y2="14"></line><line x1="4" y1="10" x2="4" y2="3"></line><line x1="12" y1="21" x2="12" y2="12"></line><line x1="12" y1="8" x2="12" y2="3"></line><line x1="20" y1="21" x2="20" y2="16"></line><line x1="20" y1="12" x2="20" y2="3"></line></svg>
         <span>Tone</span>
       </button>
 
-      <button class="nav-btn" onclick="switchTab('wifi', this)">
+      <!-- Wi-Fi Tab -->
+      <button class="nav-item" onclick="switchTab('wifi', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M5 12.55a11 11 0 0 1 14.08 0"></path><path d="M1.42 9a16 16 0 0 1 21.16 0"></path><path d="M8.53 16.11a6 6 0 0 1 6.95 0"></path><line x1="12" y1="20" x2="12.01" y2="20"></line></svg>
         <span>Wi-Fi</span>
       </button>
 
-      <button class="nav-btn" onclick="switchTab('ota', this)">
+      <!-- OTA Tab -->
+      <button class="nav-item" onclick="switchTab('ota', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="17 8 12 3 7 8"></polyline><line x1="12" y1="3" x2="12" y2="15"></line></svg>
         <span>OTA</span>
       </button>
 
-      <button class="nav-btn" onclick="switchTab('status', this)">
+      <!-- Status Tab -->
+      <button class="nav-item" onclick="switchTab('status', this)">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
         <span>Status</span>
       </button>
@@ -626,7 +593,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
   <script>
     let isPlaying = true;
-    let isPowerOn = true;
 
     function toast(msg) {
       const t = document.getElementById('appToast');
@@ -637,39 +603,29 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
     function switchTab(tabId, btn) {
       document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-      document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(b => b.classList.remove('active'));
       const target = document.getElementById('tab-' + tabId);
       if (target) target.classList.add('active');
       if (btn) btn.classList.add('active');
       else {
-        const matchingBtn = Array.from(document.querySelectorAll('.nav-btn')).find(b => b.getAttribute('onclick').includes(tabId));
+        const matchingBtn = Array.from(document.querySelectorAll('.nav-item')).find(b => b.getAttribute('onclick').includes(tabId));
         if (matchingBtn) matchingBtn.classList.add('active');
       }
     }
 
     function updateStats() {
       fetch('/api/status').then(r => r.json()).then(d => {
-        document.getElementById('bufTag').innerText = 'PSRAM: ' + d.bufferPercent.toFixed(1) + '%';
+        document.getElementById('volVal').innerText = d.volume + '%';
+        document.getElementById('volSlider').value = d.volume;
         document.getElementById('statRx').innerText = d.packetsReceived;
-        document.getElementById('statDrop').innerText = d.packetsDropped;
-        document.getElementById('statStatusText').innerText = d.statusText;
-        document.getElementById('ipBadge').innerText = (d.isAp ? 'AP: ' : 'IP: ') + d.ip;
-        document.getElementById('hostIp').innerText = d.ip;
+        document.getElementById('ipBadge').innerText = 'Device: ' + d.ip;
         document.getElementById('statPsram').innerText = ((d.freePsram || 0) / (1024*1024)).toFixed(1) + ' MB Free';
         document.getElementById('statHeap').innerText = ((d.freeHeap || 0) / 1024).toFixed(0) + ' KB Free';
 
         if (d.packetsReceived > 0) {
-          document.getElementById('trackName').innerText = 'Streaming Audio';
+          document.getElementById('trackName').innerText = 'Phone Audio Stream';
           document.getElementById('trackSub').innerText = 'Packets Rx: ' + d.packetsReceived;
-          document.getElementById('headerTitle').innerText = 'STREAMING ACTIVE';
-          document.getElementById('liveDot').style.background = '#10b981';
-          document.getElementById('liveDot').style.boxShadow = '0 0 10px #10b981';
         }
-
-        isPowerOn = d.power;
-        const pBtn = document.getElementById('powerBtn');
-        if (isPowerOn) pBtn.classList.remove('off');
-        else pBtn.classList.add('off');
       }).catch(e => console.error(e));
     }
     setInterval(updateStats, 1000);
@@ -683,22 +639,17 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function cmd(c) {
       fetch('/api/control?cmd=' + c, { method: 'POST' }).then(() => {
         if (c === 'flush') toast('Buffer Flushed!');
-        if (c === 'mute') toast('Mute toggled');
       });
-    }
-
-    function togglePower() {
-      cmd('power');
-      isPowerOn = !isPowerOn;
-      const pBtn = document.getElementById('powerBtn');
-      if (isPowerOn) pBtn.classList.remove('off');
-      else pBtn.classList.add('off');
-      toast(isPowerOn ? 'ESP32 Receiver Active' : 'ESP32 Standby Mode');
     }
 
     function togglePlay() {
       isPlaying = !isPlaying;
-      document.getElementById('playIcon').innerHTML = isPlaying ? '<polygon points="5 3 19 12 5 21 5 3"></polygon>' : '<rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect>';
+      const c = document.getElementById('playIconContainer');
+      if (isPlaying) {
+        c.innerHTML = '<div style="width:7px; height:24px; background:#000; border-radius:2px;"></div><div style="width:7px; height:24px; background:#000; border-radius:2px;"></div>';
+      } else {
+        c.innerHTML = '<div style="width:0; height:0; border-top:12px solid transparent; border-bottom:12px solid transparent; border-left:20px solid #000; margin-left:4px;"></div>';
+      }
       cmd(isPlaying ? 'resume' : 'pause');
     }
 
@@ -712,7 +663,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
           toast('Hooked to ' + ip + ':' + port + '! Audio playing...');
           switchTab('player');
         })
-        .catch(err => {
+        .catch(() => {
           toast('Ping sent to ' + ip + ':' + port);
           switchTab('player');
         });
@@ -721,7 +672,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
     function scanNetworks() {
       const box = document.getElementById('scanResults');
       box.style.display = 'block';
-      box.innerHTML = '<div style="font-size:11px; color:#06b6d4; font-family:monospace; padding:6px;">Scanning 2.4GHz channels...</div>';
+      box.innerHTML = '<div style="font-size:11px; color:#00c5e0; font-family:monospace; padding:6px;">Scanning...</div>';
       fetch('/api/scan')
         .then(r => r.json())
         .then(aps => {
@@ -731,8 +682,7 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
             h += \`<div onclick="document.getElementById('ssidInput').value='\${ap.ssid}'" style="padding:6px 8px; background:rgba(0,0,0,0.5); border-radius:8px; margin-bottom:4px; font-size:11px; font-family:monospace; display:flex; justify-content:space-between; cursor:pointer;"><span>\${ap.ssid}</span><span style="color:#94a3b8;">\${ap.rssi} dBm</span></div>\`;
           });
           box.innerHTML = h;
-        })
-        .catch(() => { box.innerHTML = '<div style="font-size:11px; color:#94a3b8; padding:6px;">Scan complete</div>'; });
+        });
     }
 
     function saveWiFi(e) {
@@ -817,38 +767,6 @@ const char INDEX_HTML[] PROGMEM = R"rawliteral(
 
       xhr.send(formData);
     }
-
-    // Animated Waveform
-    const canvas = document.getElementById('waveCanvas');
-    if (canvas) {
-      const ctx = canvas.getContext('2d');
-      let angle = 0;
-      function drawWave() {
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        if (isPlaying && isPowerOn) {
-          ctx.beginPath();
-          ctx.lineWidth = 2.5;
-          ctx.strokeStyle = '#06b6d4';
-          const mid = canvas.height / 2;
-          for (let x = 0; x < canvas.width; x += 4) {
-            const y = mid + Math.sin(x * 0.05 + angle) * 10 * Math.cos(x * 0.02 + angle * 0.5);
-            if (x === 0) ctx.moveTo(x, y);
-            else ctx.lineTo(x, y);
-          }
-          ctx.stroke();
-          angle += 0.08;
-        } else {
-          ctx.beginPath();
-          ctx.lineWidth = 1;
-          ctx.strokeStyle = 'rgba(255,255,255,0.1)';
-          ctx.moveTo(0, canvas.height / 2);
-          ctx.lineTo(canvas.width, canvas.height / 2);
-          ctx.stroke();
-        }
-        requestAnimationFrame(drawWave);
-      }
-      drawWave();
-    }
   </script>
 </body>
 </html>
@@ -890,7 +808,6 @@ void sendUdpRegistrationPing(const String& ipStr, int port) {
   }
 
   // WFAS discovery / registration handshake beacon packet:
-  // "WFAS" magic (4 bytes) + version 2 + client register command
   const uint8_t wfasPing[8] = {'W', 'F', 'A', 'S', 0x02, 0x01, 0x00, 0x00};
 
   udpAudio9090.beginPacket(targetIp, port);
@@ -1095,8 +1012,7 @@ void udpReceiverTask(void* parameter) {
         state.bytesReceived += len;
         state.packetsReceived++;
 
-        // WFAS packet handling:
-        // WFAS header is 10 bytes: 'W','F','A','S' (4 bytes) + sequence (2 bytes) + flags
+        // WFAS packet handling: 10-byte header stripping
         int pcmOffset = 0;
         if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F' && packetBuffer[2] == 'A' && packetBuffer[3] == 'S') {
           pcmOffset = 10;
