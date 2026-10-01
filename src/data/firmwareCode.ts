@@ -56,7 +56,7 @@ export const FIRMWARE_FILES: FirmwareFile[] = [
 // ----------------------------------------------------------------------------
 #define STREAM_PORT_9090  9090         // Primary WFAS UDP Audio Port
 #define STREAM_PORT_9091  9091         // Secondary WFAS UDP Audio Port
-#define SAMPLE_RATE       44100        // 44.1 kHz 16-bit Stereo PCM
+#define SAMPLE_RATE       48000        // 48.0 kHz 16-bit Stereo PCM (Android App default)
 #define I2S_PORT          I2S_NUM_0
 #define RING_BUFFER_SIZE  (512 * 1024) // 512 KB Octal PSRAM ring buffer
 #define CHUNK_SIZE        1024
@@ -170,6 +170,7 @@ struct ReceiverState {
   int8_t trebleGain = 0;
   int8_t balance = 0;
   uint16_t streamPort = STREAM_PORT_9090;
+  uint32_t sampleRate = SAMPLE_RATE;
   uint32_t bytesReceived = 0;
   uint32_t packetsReceived = 0;
   uint32_t packetsDropped = 0;
@@ -186,7 +187,7 @@ struct ReceiverState {
 void setupI2S() {
   i2s_config_t i2s_config = {
     .mode = (i2s_mode_t)(I2S_MODE_MASTER | I2S_MODE_TX),
-    .sample_rate = SAMPLE_RATE,
+    .sample_rate = state.sampleRate,
     .bits_per_sample = I2S_BITS_PER_SAMPLE_16BIT,
     .channel_format = I2S_CHANNEL_FMT_RIGHT_LEFT,
     .communication_format = (i2s_comm_format_t)(I2S_COMM_FORMAT_STAND_I2S),
@@ -210,11 +211,11 @@ void setupI2S() {
     Serial.printf("[I2S] Driver install error: %d\n", err);
   }
   i2s_set_pin(I2S_PORT, &pin_config);
-  i2s_set_clk(I2S_PORT, SAMPLE_RATE, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+  i2s_set_clk(I2S_PORT, state.sampleRate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
 
   pinMode(UDA_MUTE_PIN, OUTPUT);
   digitalWrite(UDA_MUTE_PIN, LOW); // LOW = Unmuted on UDA1334A
-  Serial.println("[I2S] UDA1334A I2S audio driver ready.");
+  Serial.printf("[I2S] UDA1334A I2S audio driver ready at %u Hz.\n", state.sampleRate);
 }
 
 // ----------------------------------------------------------------------------
@@ -785,6 +786,7 @@ void handleStatus() {
   json += "\"playing\":" + String(state.isPlaying ? "true" : "false") + ",";
   json += "\"muted\":" + String(state.isMuted ? "true" : "false") + ",";
   json += "\"volume\":" + String(state.volume) + ",";
+  json += "\"sampleRate\":" + String(state.sampleRate) + ",";
   json += "\"bass\":" + String(state.bassGain) + ",";
   json += "\"treble\":" + String(state.trebleGain) + ",";
   json += "\"balance\":" + String(state.balance) + ",";
@@ -798,6 +800,18 @@ void handleStatus() {
   json += "\"freePsram\":" + String(ESP.getFreePsram()) + ",";
   json += "\"freeHeap\":" + String(ESP.getFreeHeap()) + "}";
   server.send(200, "application/json", json);
+}
+
+void handleSetSampleRate() {
+  if (server.hasArg("rate")) {
+    uint32_t r = server.arg("rate").toInt();
+    if (r == 44100 || r == 48000 || r == 96000) {
+      state.sampleRate = r;
+      i2s_set_clk(I2S_PORT, state.sampleRate, I2S_BITS_PER_SAMPLE_16BIT, I2S_CHANNEL_STEREO);
+      Serial.printf("[I2S] Sample rate dynamically switched to %u Hz\n", state.sampleRate);
+    }
+  }
+  handleStatus();
 }
 
 void sendUdpRegistrationPing(const String& ipStr, int port) {
@@ -881,6 +895,7 @@ void handleSaveWiFi() {
 void setupWebServer() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/api/status", HTTP_GET, handleStatus);
+  server.on("/api/samplerate", handleSetSampleRate);
   server.on("/connect_phone", HTTP_POST, handleConnectPhone);
   server.on("/connect_phone", HTTP_GET, handleConnectPhone);
   server.on("/api/scan", HTTP_GET, handleScanWiFi);
@@ -969,9 +984,12 @@ void setupWebServer() {
 // ----------------------------------------------------------------------------
 // FREERTOS AUDIO PLAYBACK TASK (Pinned to Core 1)
 // ----------------------------------------------------------------------------
+// FREERTOS AUDIO PLAYBACK TASK (Pinned to Core 1)
+// ----------------------------------------------------------------------------
 void audioPlaybackTask(void* parameter) {
   uint8_t dmaBuffer[CHUNK_SIZE];
   size_t bytesWritten = 0;
+  bool prebuffering = true;
 
   for (;;) {
     if (!state.powerOn || !state.isPlaying || state.isMuted) {
@@ -979,7 +997,26 @@ void audioPlaybackTask(void* parameter) {
       continue;
     }
 
-    if (audioBuffer && audioBuffer->availableForRead() >= CHUNK_SIZE) {
+    size_t available = audioBuffer ? audioBuffer->availableForRead() : 0;
+
+    // Jitter Buffer: Buffer 16 KB (~85ms of 48kHz stereo) before starting playback.
+    // This absorbs Wi-Fi transmission jitter and prevents audio underruns/crackle.
+    if (prebuffering) {
+      if (available >= 16384) {
+        prebuffering = false;
+      } else {
+        vTaskDelay(pdMS_TO_TICKS(4));
+        continue;
+      }
+    } else {
+      if (available < CHUNK_SIZE) {
+        prebuffering = true;
+        vTaskDelay(pdMS_TO_TICKS(4));
+        continue;
+      }
+    }
+
+    if (audioBuffer) {
       size_t bytesRead = audioBuffer->read(dmaBuffer, CHUNK_SIZE);
       if (bytesRead > 0) {
         // Apply hardware volume scaling (16-bit stereo PCM)
@@ -993,8 +1030,6 @@ void audioPlaybackTask(void* parameter) {
 
         i2s_write(I2S_PORT, dmaBuffer, bytesRead, &bytesWritten, portMAX_DELAY);
       }
-    } else {
-      vTaskDelay(pdMS_TO_TICKS(2));
     }
   }
 }
@@ -1023,7 +1058,9 @@ void udpReceiverTask(void* parameter) {
 
         // Filter text control packets
         if (len < 64 && (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0 ||
-                         strncmp((char*)packetBuffer, "PING", 4) == 0)) {
+                         strncmp((char*)packetBuffer, "PING", 4) == 0 ||
+                         strncmp((char*)packetBuffer, "WFAS_BUSY", 9) == 0 ||
+                         strncmp((char*)packetBuffer, "WFAS_UNAUTHORIZED", 17) == 0)) {
           if (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0) {
             state.phoneConnected = true;
             state.connectionStatus = "Streaming from Phone Active!";
@@ -1032,13 +1069,17 @@ void udpReceiverTask(void* parameter) {
           continue;
         }
 
-        // WFAS packet handling: 10-byte header stripping
+        // WFAS packet handling: 10-byte wire header stripping
+        // v2 wire header: [0]='W'(0x57), [1]='F'(0x46), [2]=0x02, [3]=0x00, [4..5]=seq, [6..9]=samplePos
         int pcmOffset = 0;
-        if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F' && packetBuffer[2] == 'A' && packetBuffer[3] == 'S') {
+        if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F') {
           pcmOffset = 10;
         }
 
         int pcmLen = len - pcmOffset;
+        // Align strictly to 4-byte boundaries (16-bit stereo frame = 4 bytes: 2 bytes L + 2 bytes R)
+        pcmLen -= (pcmLen % 4);
+
         if (pcmLen > 0 && audioBuffer) {
           size_t written = audioBuffer->write(&packetBuffer[pcmOffset], pcmLen);
           if (written < (size_t)pcmLen) {
@@ -1070,7 +1111,9 @@ void udpReceiverTask(void* parameter) {
 
         // Filter text control packets
         if (len < 64 && (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0 ||
-                         strncmp((char*)packetBuffer, "PING", 4) == 0)) {
+                         strncmp((char*)packetBuffer, "PING", 4) == 0 ||
+                         strncmp((char*)packetBuffer, "WFAS_BUSY", 9) == 0 ||
+                         strncmp((char*)packetBuffer, "WFAS_UNAUTHORIZED", 17) == 0)) {
           if (strncmp((char*)packetBuffer, "HELLO_ACK", 9) == 0) {
             state.phoneConnected = true;
             state.connectionStatus = "Streaming from Phone Active!";
@@ -1080,11 +1123,13 @@ void udpReceiverTask(void* parameter) {
         }
 
         int pcmOffset = 0;
-        if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F' && packetBuffer[2] == 'A' && packetBuffer[3] == 'S') {
+        if (len > 10 && packetBuffer[0] == 'W' && packetBuffer[1] == 'F') {
           pcmOffset = 10;
         }
 
         int pcmLen = len - pcmOffset;
+        pcmLen -= (pcmLen % 4);
+
         if (pcmLen > 0 && audioBuffer) {
           size_t written = audioBuffer->write(&packetBuffer[pcmOffset], pcmLen);
           if (written < (size_t)pcmLen) {

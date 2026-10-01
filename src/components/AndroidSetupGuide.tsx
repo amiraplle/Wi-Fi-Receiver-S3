@@ -96,14 +96,36 @@ export const AndroidSetupGuide: React.FC = () => {
         {/* Step 4 */}
         <div className="p-4 bg-slate-950 rounded border border-slate-800 space-y-2">
           <div className="text-xs font-mono text-cyan-400 font-bold">STEP 04</div>
-          <div className="text-sm font-semibold text-white">Audio Format</div>
+          <div className="text-sm font-semibold text-white">Audio Format & Rate</div>
           <p className="text-xs text-slate-400 leading-relaxed">
-            Select <strong className="text-slate-200">16-bit PCM, 44100 Hz, Stereo</strong>. Hit Start Streaming on your phone!
+            In app settings, check <strong className="text-slate-200">Sample Rate: 48000 Hz</strong> (App default) and <strong className="text-slate-200">Stereo 16-bit PCM</strong>.
           </p>
           <div className="text-[11px] font-mono text-slate-500 pt-1">
-            UDA1334A Direct I2S
+            ESP32 synced to 48kHz I2S
           </div>
         </div>
+      </div>
+
+      {/* Noise & Crackle Fix Guide */}
+      <div className="p-4 bg-amber-950/20 border border-amber-500/30 rounded-lg space-y-3 text-xs text-slate-300">
+        <div className="flex items-center gap-2 text-amber-400 font-mono font-bold uppercase tracking-wider">
+          <AlertCircle className="w-4 h-4" />
+          <span>Why Was It Noisy? Solutions Applied in Updated Firmware:</span>
+        </div>
+        <ul className="list-disc list-inside space-y-2 text-slate-300 pl-1 leading-relaxed">
+          <li>
+            <strong className="text-white">Sample Rate Mismatch (48kHz vs 44.1kHz):</strong> Android systems natively capture audio at <strong>48,000 Hz</strong>. If the DAC ran at 44,100 Hz, the audio drifted out of sync, causing rapid buffer underflows (static/crackling). The firmware is now set to <strong>48,000 Hz</strong> by default, matching Android.
+          </li>
+          <li>
+            <strong className="text-white">10-Byte WFAS Header Stripping:</strong> Marco Morosi&apos;s v2 protocol prepends each UDP audio packet with a 10-byte header (<code className="text-cyan-300">0x57 0x46 0x02 0x00 ...</code>). The updated firmware strips this 10-byte header so raw metadata numbers are no longer sent to the DAC as audio noise.
+          </li>
+          <li>
+            <strong className="text-white">PCM 4-Byte Frame Alignment:</strong> 16-bit stereo requires strict 4-byte sample alignment (2 bytes Left + 2 bytes Right). The firmware now guarantees 4-byte boundaries, preventing channel phase inversion and hash distortion.
+          </li>
+          <li>
+            <strong className="text-white">Jitter Pre-buffering:</strong> A 16 KB jitter buffer absorbs Wi-Fi bursts, eliminating stutter and dropouts on 2.4 GHz networks.
+          </li>
+        </ul>
       </div>
 
       {/* Router / Network Notice */}

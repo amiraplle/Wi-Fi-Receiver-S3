@@ -24,7 +24,7 @@ export default function App() {
     bassGain: 2,
     trebleGain: 1,
     gainBoost: 0,
-    sampleRate: 44100,
+    sampleRate: 48000,
     bitDepth: 16,
     channels: 2,
     bufferUsagePercent: 64,

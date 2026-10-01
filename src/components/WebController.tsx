@@ -102,6 +102,18 @@ export const WebController: React.FC<WebControllerProps> = ({
     audioEngine.setEQ(status.bassGain, newTreble);
   };
 
+  const handleSampleRateChange = async (rate: number) => {
+    onUpdateStatus({ sampleRate: rate });
+    if (!isSimulated && espIp) {
+      try {
+        await fetch(`http://${espIp}/api/samplerate?rate=${rate}`);
+      } catch (err) {
+        console.warn('Could not switch sample rate via HTTP:', err);
+      }
+    }
+    showFeedback(`Sample rate switched to ${rate === 48000 ? '48.0 kHz (Android Default)' : '44.1 kHz'}`);
+  };
+
   // Real-time animation loop for VU meters & waveform/spectrum canvas
   useEffect(() => {
     let animId: number;
@@ -583,11 +595,37 @@ export const WebController: React.FC<WebControllerProps> = ({
             </div>
 
             <div className="p-3 bg-slate-950 rounded border border-slate-800">
-              <div className="text-[10px] font-mono text-slate-400 uppercase">Sample Rate</div>
-              <div className="text-base font-mono font-bold text-cyan-400 mt-1 tabular-nums">
-                44.1 <span className="text-xs font-normal text-slate-400">kHz</span>
+              <div className="flex items-center justify-between text-[10px] font-mono text-slate-400 uppercase">
+                <span>Sample Rate</span>
+                <span className="text-[9px] text-cyan-400 font-bold">I2S CLK</span>
               </div>
-              <div className="text-[10px] text-slate-500 mt-0.5">16-bit PCM Stereo</div>
+              <div className="text-base font-mono font-bold text-cyan-400 mt-1 tabular-nums flex items-baseline gap-1">
+                {(status.sampleRate / 1000).toFixed(1)} <span className="text-xs font-normal text-slate-400">kHz</span>
+              </div>
+              <div className="flex gap-1 mt-1.5">
+                <button
+                  onClick={() => handleSampleRateChange(48000)}
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded ${
+                    status.sampleRate === 48000
+                      ? 'bg-cyan-600 text-white font-bold'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="48.0 kHz (Native Android Default)"
+                >
+                  48k
+                </button>
+                <button
+                  onClick={() => handleSampleRateChange(44100)}
+                  className={`px-1.5 py-0.5 text-[9px] font-mono rounded ${
+                    status.sampleRate === 44100
+                      ? 'bg-cyan-600 text-white font-bold'
+                      : 'bg-slate-900 text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="44.1 kHz (CD Audio)"
+                >
+                  44.1k
+                </button>
+              </div>
             </div>
 
             <div className="p-3 bg-slate-950 rounded border border-slate-800">
