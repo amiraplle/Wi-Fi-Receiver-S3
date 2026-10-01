@@ -809,27 +809,39 @@ void sendUdpRegistrationPing(const String& ipStr, int port) {
     return;
   }
 
-  // WFAS v2 Handshake: Marco Morosi's NetworkManager.kt line 1877 requires:
-  // if (!message.startsWith(CLIENT_HELLO_MESSAGE)) continue;
-  // Where CLIENT_HELLO_MESSAGE is "HELLO_FROM_CLIENT" and version is 2
-  const char* helloMsg = "HELLO_FROM_CLIENT;v=2";
+  // 1. WFAS v2 Handshake
+  const char* helloMsgV2 = "HELLO_FROM_CLIENT;v=2";
+  // 2. Legacy fallback
+  const char* helloMsgV1 = "HELLO_FROM_CLIENT";
+  // 3. Binary legacy WFAS probe
+  const uint8_t wfasPing[8] = {'W', 'F', 'A', 'S', 0x02, 0x01, 0x00, 0x00};
 
+  // Primary UDP socket 9090
   udpAudio9090.beginPacket(targetIp, port);
-  udpAudio9090.write((const uint8_t*)helloMsg, strlen(helloMsg));
+  udpAudio9090.write((const uint8_t*)helloMsgV2, strlen(helloMsgV2));
   udpAudio9090.endPacket();
 
+  udpAudio9090.beginPacket(targetIp, port);
+  udpAudio9090.write(wfasPing, 8);
+  udpAudio9090.endPacket();
+
+  // Secondary UDP socket 9091
   udpAudio9091.beginPacket(targetIp, port);
-  udpAudio9091.write((const uint8_t*)helloMsg, strlen(helloMsg));
+  udpAudio9091.write((const uint8_t*)helloMsgV2, strlen(helloMsgV2));
   udpAudio9091.endPacket();
 
-  // If port wasn't 9091, also send to default discovery port 9091
+  // Also send to default discovery port 9091 if port != 9091
   if (port != 9091) {
     udpAudio9091.beginPacket(targetIp, 9091);
-    udpAudio9091.write((const uint8_t*)helloMsg, strlen(helloMsg));
+    udpAudio9091.write((const uint8_t*)helloMsgV2, strlen(helloMsgV2));
+    udpAudio9091.endPacket();
+
+    udpAudio9091.beginPacket(targetIp, 9091);
+    udpAudio9091.write((const uint8_t*)helloMsgV1, strlen(helloMsgV1));
     udpAudio9091.endPacket();
   }
 
-  Serial.printf("[UDP] Sent WFAS handshake 'HELLO_FROM_CLIENT;v=2' to %s:%d\n", ipStr.c_str(), port);
+  Serial.printf("[UDP] Sent WFAS handshakes (v2, v1, bin) to %s:%d\n", ipStr.c_str(), port);
 }
 
 void handleConnectPhone() {
@@ -849,6 +861,24 @@ void handleConnectPhone() {
   } else {
     server.send(400, "application/json", "{\"error\":\"Missing phone_ip parameter\"}");
   }
+}
+
+void handleDisconnectPhone() {
+  if (state.phoneServerIp.length() > 0) {
+    IPAddress targetIp;
+    if (targetIp.fromString(state.phoneServerIp)) {
+      const char* byeMsg = "CLIENT_BYE";
+      udpAudio9090.beginPacket(targetIp, state.streamPort);
+      udpAudio9090.write((const uint8_t*)byeMsg, strlen(byeMsg));
+      udpAudio9090.endPacket();
+    }
+  }
+  state.phoneConnected = false;
+  state.phoneServerIp = "";
+  state.connectionStatus = "Disconnected / Idle";
+  if (audioBuffer) audioBuffer->flush();
+  Serial.println("[UDP] Sent CLIENT_BYE and unlinked phone.");
+  server.send(200, "application/json", "{\"success\":true,\"msg\":\"Disconnected from phone\"}");
 }
 
 void handleScanWiFi() {
@@ -886,6 +916,8 @@ void setupWebServer() {
   server.on("/api/samplerate", handleSetSampleRate);
   server.on("/connect_phone", HTTP_POST, handleConnectPhone);
   server.on("/connect_phone", HTTP_GET, handleConnectPhone);
+  server.on("/disconnect_phone", HTTP_POST, handleDisconnectPhone);
+  server.on("/disconnect_phone", HTTP_GET, handleDisconnectPhone);
   server.on("/api/scan", HTTP_GET, handleScanWiFi);
   server.on("/savewifi", HTTP_POST, handleSaveWiFi);
 
@@ -972,8 +1004,6 @@ void setupWebServer() {
 // ----------------------------------------------------------------------------
 // FREERTOS AUDIO PLAYBACK TASK (Pinned to Core 1)
 // ----------------------------------------------------------------------------
-// FREERTOS AUDIO PLAYBACK TASK (Pinned to Core 1)
-// ----------------------------------------------------------------------------
 void audioPlaybackTask(void* parameter) {
   uint8_t dmaBuffer[CHUNK_SIZE];
   size_t bytesWritten = 0;
@@ -987,19 +1017,19 @@ void audioPlaybackTask(void* parameter) {
 
     size_t available = audioBuffer ? audioBuffer->availableForRead() : 0;
 
-    // Jitter Buffer: Buffer 16 KB (~85ms of 48kHz stereo) before starting playback.
-    // This absorbs Wi-Fi transmission jitter and prevents audio underruns/crackle.
+    // Jitter Buffer: Buffer 2 KB (~11ms of 48kHz stereo) before starting playback.
+    // This allows immediate audio start while absorbing packet jitter.
     if (prebuffering) {
-      if (available >= 16384) {
+      if (available >= 2048) {
         prebuffering = false;
       } else {
-        vTaskDelay(pdMS_TO_TICKS(4));
+        vTaskDelay(pdMS_TO_TICKS(2));
         continue;
       }
     } else {
       if (available < CHUNK_SIZE) {
         prebuffering = true;
-        vTaskDelay(pdMS_TO_TICKS(4));
+        vTaskDelay(pdMS_TO_TICKS(2));
         continue;
       }
     }
